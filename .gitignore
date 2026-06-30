@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Virtual envs (live on Mimer, never commit)
+venv/
+.venv/
+
+# SLURM / run artifacts
+logs/
+*.out
+*.err
+
+# Checkpoints / generated data
+checkpoints/
+*.ckpt
+*.pt
+*.npy
+*.npz
+
+# macOS metadata sidecars (created when the folder syncs from a Mac)
+._*
+.DS_Store
+.AppleDouble
+.Spotlight-V100
+.Trashes

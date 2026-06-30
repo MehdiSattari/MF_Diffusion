@@ -1,0 +1,12 @@
+# Core
+numpy>=1.24
+torch>=2.1          # torch.func.jvp is used for the MeanFlow JVP (Step 4)
+
+# Channel data generation (TensorFlow-backed). On Alvis, prefer the
+# cluster-provided TF module and install a matching Sionna version.
+# The data code supports both the legacy (<=0.19) and new (>=1.0) Sionna APIs.
+sionna>=0.19
+
+# Utilities (used in later steps)
+pyyaml>=6.0
+tqdm>=4.65
