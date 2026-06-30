@@ -94,8 +94,32 @@ class EncoderConfig:
 
 
 @dataclass
+class UNetConfig:
+    """U-Net generator (the DiU backbone `f_G`).
+
+    Predicts the average-velocity field u [B, 2, Nt, Nc] from the noisy CSI frame
+    concatenated with the temporal latent Z, conditioned on the MeanFlow time
+    pair (r, t). Architecture follows the paper's Appendix B: 32->64 channels,
+    a single 2x downsample (16x16 -> 8x8), self-attention at the 8x8 stage and
+    bottleneck, skip connections, SiLU + adaptive (FiLM) conditioning.
+    """
+    in_channels: int = 2                 # noisy CSI real/imag
+    cond_channels: int = 128             # Z channels — must match EncoderConfig.latent_channels
+    out_channels: int = 2                # predicted u real/imag
+    base_channels: int = 32              # channels at full resolution
+    ch_mult: int = 2                     # multiplier for the down-sampled stage (-> 64)
+    num_res_blocks: int = 2
+    time_embed_dim: int = 256
+    time_scale: float = 1000.0           # scale t,r in [0,1] before sinusoidal embedding
+    num_heads: int = 1
+    norm_groups: int = 8                 # GroupNorm groups (divides 32 and 64)
+    dropout: float = 0.0
+
+
+@dataclass
 class Config:
     """Top-level container. Diffusion / training sections are added in later
     steps."""
     data: DataConfig = field(default_factory=DataConfig)
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
+    generator: UNetConfig = field(default_factory=UNetConfig)

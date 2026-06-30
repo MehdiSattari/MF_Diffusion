@@ -45,8 +45,15 @@ print("torch", torch.__version__, "| cuda.is_available:", torch.cuda.is_availabl
       "| device:", (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"))
 PY
 
-# Step 1 deliverable: data-pipeline smoke test (also exercises Sionna on CPU).
-# In later steps this line becomes:  python -m scripts.train --config configs/default.yaml
-python -m scripts.smoke_data >> "$LOG" 2>&1
+# Validation so far (data pipeline + ConvLSTM encoder + U-Net generator).
+# In later steps this becomes:  python -m scripts.train --config configs/default.yaml
+{
+    echo "### unit tests ###"
+    python -m tests.test_dataset_mock
+    python -m tests.test_encoder
+    python -m tests.test_unet
+    echo "### end-to-end smoke (data -> encoder -> generator) ###"
+    python -m scripts.smoke_generator
+} >> "$LOG" 2>&1
 
 echo "===== JOB FINISHED AT $(date) =====" | tee -a "$LOG"

@@ -15,7 +15,8 @@ Models" as a MeanFlow model that learns the *average velocity* field, enabling
       PyTorch `(H_past, H_future)` stream.
 - [x] **Step 2 — ConvLSTM temporal encoder** (`mf_csi/models/`): history
       `H_past` -> spatial latent `Z [B, C_z, Nt, Nc]`.
-- [ ] **Step 3 — U-Net generator** conditioned on latent `Z` and time pair `(r, t)`.
+- [x] **Step 3 — U-Net generator** (`mf_csi/models/unet.py`): `f_G(h, Z, r, t)`
+      -> average velocity `u [B, 2, Nt, Nc]`; JVP-tested for Step 4.
 - [ ] **Step 4 — MeanFlow objective**: JVP-based identity, stop-gradient target.
 - [ ] **Step 5 — Autoregressive 1-step inference**.
 - [ ] **Step 6 — Training loop + SLURM** for Alvis.
