@@ -143,9 +143,17 @@ class MeanFlowConfig:
 
 
 @dataclass
+class InferenceConfig:
+    """1-step MeanFlow AR sampling (the paper's Algorithm 4)."""
+    seed_std: float = 1.0            # H^1 ~ N(0, seed_std^2) — matches training eps ~ N(0,1)
+    step_noise_std: float = 0.0      # optional per-step stochasticity (0 = deterministic MMSE-style)
+
+
+@dataclass
 class Config:
     """Top-level container. Training loop config is added in Step 6."""
     data: DataConfig = field(default_factory=DataConfig)
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
     generator: UNetConfig = field(default_factory=UNetConfig)
     meanflow: MeanFlowConfig = field(default_factory=MeanFlowConfig)
+    inference: InferenceConfig = field(default_factory=InferenceConfig)

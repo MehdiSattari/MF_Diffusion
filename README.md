@@ -19,7 +19,8 @@ Models" as a MeanFlow model that learns the *average velocity* field, enabling
       -> average velocity `u [B, 2, Nt, Nc]`; JVP-tested for Step 4.
 - [x] **Step 4 — MeanFlow objective** (`mf_csi/meanflow.py`): flow interpolant,
       `d/dt u` via forward-mode AD, stop-gradient target, adaptive-weighted loss.
-- [ ] **Step 5 — Autoregressive 1-step inference**.
+- [x] **Step 5 — Autoregressive 1-step inference** (`mf_csi/inference.py`):
+      `Ĥ = ε − u(ε, Z, 0, 1)` rolled out over the horizon + NMSE.
 - [ ] **Step 6 — Training loop + SLURM** for Alvis.
 
 ## System setup (matches the diffusion paper)

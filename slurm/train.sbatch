@@ -53,9 +53,11 @@ PY
     python -m tests.test_encoder
     python -m tests.test_unet
     python -m tests.test_meanflow
-    echo "### end-to-end smoke (data -> encoder -> generator -> MeanFlow loss) ###"
+    python -m tests.test_inference
+    echo "### end-to-end smoke (data -> encoder -> generator -> loss -> AR NMSE) ###"
     python -m scripts.smoke_generator
     python -m scripts.smoke_meanflow
+    python -m scripts.smoke_inference
 } >> "$LOG" 2>&1
 
 echo "===== JOB FINISHED AT $(date) =====" | tee -a "$LOG"
