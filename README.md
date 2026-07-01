@@ -17,7 +17,8 @@ Models" as a MeanFlow model that learns the *average velocity* field, enabling
       `H_past` -> spatial latent `Z [B, C_z, Nt, Nc]`.
 - [x] **Step 3 — U-Net generator** (`mf_csi/models/unet.py`): `f_G(h, Z, r, t)`
       -> average velocity `u [B, 2, Nt, Nc]`; JVP-tested for Step 4.
-- [ ] **Step 4 — MeanFlow objective**: JVP-based identity, stop-gradient target.
+- [x] **Step 4 — MeanFlow objective** (`mf_csi/meanflow.py`): flow interpolant,
+      `d/dt u` via forward-mode AD, stop-gradient target, adaptive-weighted loss.
 - [ ] **Step 5 — Autoregressive 1-step inference**.
 - [ ] **Step 6 — Training loop + SLURM** for Alvis.
 

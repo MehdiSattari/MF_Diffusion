@@ -52,8 +52,10 @@ PY
     python -m tests.test_dataset_mock
     python -m tests.test_encoder
     python -m tests.test_unet
-    echo "### end-to-end smoke (data -> encoder -> generator) ###"
+    python -m tests.test_meanflow
+    echo "### end-to-end smoke (data -> encoder -> generator -> MeanFlow loss) ###"
     python -m scripts.smoke_generator
+    python -m scripts.smoke_meanflow
 } >> "$LOG" 2>&1
 
 echo "===== JOB FINISHED AT $(date) =====" | tee -a "$LOG"

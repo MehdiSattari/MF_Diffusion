@@ -117,9 +117,35 @@ class UNetConfig:
 
 
 @dataclass
+class MeanFlowConfig:
+    """MeanFlow training objective (the paper's Algorithm 2).
+
+    Flow convention: H^t = (1-t) Y + t eps, so t=0 is data (the next CSI frame Y)
+    and t=1 is noise. The instantaneous velocity is v = eps - Y. The network
+    learns the average velocity u_theta(H^t, Z, r, t); the target is
+        u_tgt = v - (t - r) * d/dt u_theta
+    with a stop-gradient, and the loss is an adaptively-weighted ||u - sg(u_tgt)||^2.
+    """
+    # (r, t) sampling: t >= r, with a fraction forced to r == t (flow-matching).
+    time_sampler: str = "lognorm"        # "lognorm" | "uniform"
+    lognorm_mean: float = -0.4           # logit-normal mean (P_mean)
+    lognorm_std: float = 1.0             # logit-normal std  (P_std)
+    ratio_r_not_equal_t: float = 0.25    # fraction of samples with r != t
+
+    # Adaptive loss weight  w = 1 / (||Δ||^2 + c)^p  (stop-grad on w).
+    loss_power: float = 1.0              # p
+    loss_eps: float = 1e-3               # c
+
+    # Noise-augment the conditioning history (simulates CSI estimation error).
+    noise_aug: bool = True
+    snr_db_min: float = -20.0
+    snr_db_max: float = 20.0
+
+
+@dataclass
 class Config:
-    """Top-level container. Diffusion / training sections are added in later
-    steps."""
+    """Top-level container. Training loop config is added in Step 6."""
     data: DataConfig = field(default_factory=DataConfig)
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
     generator: UNetConfig = field(default_factory=UNetConfig)
+    meanflow: MeanFlowConfig = field(default_factory=MeanFlowConfig)
