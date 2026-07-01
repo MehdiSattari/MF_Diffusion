@@ -31,6 +31,14 @@ def test_loss_and_param_grads():
     enc = TemporalEncoder(cfg.encoder)
     gen = UNetGenerator(cfg.generator)
 
+    # The generator's final conv is zero-initialized (standard for flow models),
+    # so at the very first step u==0 and gradient cannot reach anything upstream
+    # of the output layer (encoder included). That is a step-0 artifact only.
+    # Perturb the output weights so this test reflects the steady state where the
+    # encoder does receive gradient.
+    with torch.no_grad():
+        gen.unet.out_conv.weight.normal_(0.0, 0.01)
+
     B = 2
     Np, Nf = cfg.data.num_past, cfg.data.num_future
     Nt, Nc = cfg.data.num_bs_ant, cfg.data.num_subcarriers_used
