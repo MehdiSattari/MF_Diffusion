@@ -150,10 +150,36 @@ class InferenceConfig:
 
 
 @dataclass
+class TrainConfig:
+    """Training loop hyperparameters. Grad clipping + EMA are important here: the
+    MeanFlow target drifts during training, so clipping stabilizes updates and the
+    EMA weights are what we evaluate."""
+    total_steps: int = 50000
+    batch_size: int = 128
+    lr: float = 2e-4
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.95
+    weight_decay: float = 0.0
+    grad_clip_norm: float = 1.0          # 0 disables
+    warmup_steps: int = 1000
+    ema_decay: float = 0.9999
+
+    log_every: int = 100
+    eval_every: int = 2000
+    ckpt_every: int = 5000
+    val_samples: int = 256
+    val_batch_size: int = 64
+
+    out_dir: str = "runs/meanflow_diu"
+    seed: int = 0
+
+
+@dataclass
 class Config:
-    """Top-level container. Training loop config is added in Step 6."""
+    """Top-level container."""
     data: DataConfig = field(default_factory=DataConfig)
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
     generator: UNetConfig = field(default_factory=UNetConfig)
     meanflow: MeanFlowConfig = field(default_factory=MeanFlowConfig)
     inference: InferenceConfig = field(default_factory=InferenceConfig)
+    train: TrainConfig = field(default_factory=TrainConfig)

@@ -21,7 +21,26 @@ Models" as a MeanFlow model that learns the *average velocity* field, enabling
       `d/dt u` via forward-mode AD, stop-gradient target, adaptive-weighted loss.
 - [x] **Step 5 — Autoregressive 1-step inference** (`mf_csi/inference.py`):
       `Ĥ = ε − u(ε, Z, 0, 1)` rolled out over the horizon + NMSE.
-- [ ] **Step 6 — Training loop + SLURM** for Alvis.
+- [x] **Step 6 — Training loop + SLURM** (`scripts/train.py`): warmup, grad
+      clipping, EMA, periodic AR-NMSE eval, checkpoint/resume.
+
+## Training
+
+```bash
+# quick GPU validation (tests + smokes):
+sbatch slurm/smoke.sbatch
+
+# real training (T4 default; use A40 for speed):
+sbatch slurm/train.sbatch
+sbatch --gpus-per-node=A40:1 slurm/train.sbatch
+
+# resume:
+RESUME=runs/mf_<jobid>/ckpt_last.pt OUT=runs/mf_<jobid> STEPS=100000 \
+    sbatch slurm/train.sbatch
+```
+
+Checkpoints (`ckpt_best.pt`, `ckpt_last.pt`) and per-eval NMSE land in the run
+directory. EMA weights are used for evaluation.
 
 ## System setup (matches the diffusion paper)
 

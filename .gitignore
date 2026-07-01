@@ -13,8 +13,9 @@ logs/
 *.out
 *.err
 
-# Checkpoints / generated data
+# Checkpoints / runs / generated data
 checkpoints/
+runs/
 *.ckpt
 *.pt
 *.npy
