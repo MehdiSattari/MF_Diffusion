@@ -135,7 +135,10 @@ def main():
         if cfg.train.grad_clip_norm > 0:
             torch.nn.utils.clip_grad_norm_(params, cfg.train.grad_clip_norm)
         opt.step()
-        ema_enc.update(enc); ema_gen.update(gen)
+        # EMA warmup: track fast early, ramp toward the configured decay so the
+        # EMA weights are meaningful long before ~1/(1-decay) steps have passed.
+        eff_decay = min(cfg.train.ema_decay, (1.0 + step) / (10.0 + step))
+        ema_enc.update(enc, eff_decay); ema_gen.update(gen, eff_decay)
         running += m["mse"].item(); running_n += 1
 
         if step % cfg.train.log_every == 0:
@@ -147,10 +150,13 @@ def main():
         if step > 0 and step % cfg.train.eval_every == 0:
             ema_enc.copy_to(enc_eval); ema_gen.copy_to(gen_eval)
             per_step, overall = evaluate(enc_eval, gen_eval, val_batches, cfg, device)
+            _, overall_raw = evaluate(enc, gen, val_batches, cfg, device)   # raw weights too
             avg_db = nmse_db(overall).item()
+            raw_db = nmse_db(overall_raw).item()
             s1, sN = nmse_db(per_step[0]).item(), nmse_db(per_step[-1]).item()
-            print(f"  [eval] step {step} | avg NMSE {avg_db:.2f} dB "
-                  f"(step1 {s1:.2f}, step{len(per_step)} {sN:.2f})", flush=True)
+            print(f"  [eval] step {step} | EMA avg NMSE {avg_db:.2f} dB "
+                  f"(step1 {s1:.2f}, step{len(per_step)} {sN:.2f}) | raw {raw_db:.2f} dB",
+                  flush=True)
             if avg_db < best:
                 best = avg_db
                 save_ckpt(os.path.join(cfg.train.out_dir, "ckpt_best.pt"),

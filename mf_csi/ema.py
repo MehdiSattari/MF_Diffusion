@@ -16,11 +16,12 @@ class EMA:
         self.shadow = {k: v.detach().clone() for k, v in module.state_dict().items()}
 
     @torch.no_grad()
-    def update(self, module: torch.nn.Module) -> None:
+    def update(self, module: torch.nn.Module, decay: float = None) -> None:
+        d = self.decay if decay is None else decay
         for k, v in module.state_dict().items():
             s = self.shadow[k]
             if torch.is_floating_point(v):
-                s.mul_(self.decay).add_(v.detach(), alpha=1.0 - self.decay)
+                s.mul_(d).add_(v.detach(), alpha=1.0 - d)
             else:
                 s.copy_(v)                       # ints/bools: just track latest
 
