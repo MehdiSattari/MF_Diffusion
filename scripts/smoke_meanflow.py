@@ -18,7 +18,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("device:", device)
 
-    ds = CSIStreamDataset(cfg.data, batch_size=16, steps_per_epoch=20)
+    ds = CSIStreamDataset(cfg.data, batch_size=16, steps_per_epoch=60)
     loader = DataLoader(ds, batch_size=None)
 
     enc = TemporalEncoder(cfg.encoder).to(device)
@@ -33,12 +33,14 @@ def main():
         opt.zero_grad()
         loss.backward()
         opt.step()
-        if i % 5 == 0 or i == 19:
+        if i % 10 == 0 or i == 59:
             print(f"step {i:2d} | loss {metrics['loss'].item():.4f} "
                   f"| mse {metrics['mse'].item():.4f} "
                   f"| frac(r!=t) {metrics['frac_r_neq_t'].item():.2f}")
 
-    print("OK: meanflow training smoke test passed (loss should trend down).")
+    # NOTE: the adaptive-weighted `loss` self-normalizes to ~1 (that's expected);
+    # watch `mse`, which should trend downward as the model learns.
+    print("OK: meanflow training smoke test passed (watch mse trend down).")
 
 
 if __name__ == "__main__":

@@ -7,15 +7,20 @@ the DiU generator conditioned on the ConvLSTM latent Z:
   2. Z = encoder(X~).
   3. Sample (r, t) with t >= r; Y = next future frame.
   4. Flow interpolant  H^t = (1-t) Y + t eps ;  velocity  v = eps - Y.
-  5. u and d/dt u via forward-mode AD (dual tensors), holding Z fixed with a
-     time tangent (v, 0, 1) on (H^t, r, t).
+  5. u from a normal forward pass (keeps the reverse-mode graph to BOTH the
+     generator and the encoder-through-Z); d/dt u from a SEPARATE forward-mode-AD
+     pass with time tangent (v, 0, 1) on (H^t, r, t) — value only.
   6. Target  u_tgt = v - (t - r) d/dt u  (stop-gradient).
   7. Adaptively-weighted loss  sg(w) * ||u - u_tgt||^2,  w = 1/(||.||^2 + c)^p.
 
-Why forward_ad and not torch.func.jvp: forward-mode dual tensors compose with
-reverse-mode autograd, so the loss still backpropagates into the encoder AND
-generator weights. torch.func.jvp would treat the (closed-over) parameters as
-constants and no weight gradients would flow.
+Two design notes:
+  * forward_ad (dual tensors), not torch.func.jvp: torch.func.jvp treats the
+    closed-over parameters as constants, so no weight gradients would flow.
+  * Separate passes for u and d/dt u: computing both in ONE dual pass drops the
+    reverse-mode edge from u back to Z (a plain, non-dual input), which silently
+    zeroes the ENCODER gradient. Since the target is stop-gradient, d/dt u needs
+    no backward graph, so a second detached forward-AD pass is the clean fix.
+    (Cost: one extra generator forward per step — fuseable later if needed.)
 """
 
 from __future__ import annotations
@@ -77,14 +82,21 @@ def meanflow_loss(encoder, generator, past: torch.Tensor, future: torch.Tensor,
     Ht = (1.0 - t_b) * Y + t_b * eps
     v = eps - Y
 
-    # Step 5: u and d/dt u via forward-mode AD (tangent (v, 0, 1) on (Ht, r, t)).
+    # Step 5a: u with a NORMAL forward pass -> full reverse-mode graph, so the
+    # loss backpropagates into BOTH the generator AND the encoder (through Z).
+    u = generator(Ht, z, r, t)
+
+    # Step 5b: d/dt u via a SEPARATE forward-mode-AD pass (value only). The target
+    # is stop-gradient, so d/dt u needs no backward graph; inputs are detached so
+    # this pass builds no gradient path. Tangent (v, 0, 1) on (Ht, r, t) gives
+    #   d/dt u = v . d_h u + d_t u.
     with fwAD.dual_level():
-        h_dual = fwAD.make_dual(Ht, v)
-        r_dual = fwAD.make_dual(r, torch.zeros_like(r))
-        t_dual = fwAD.make_dual(t, torch.ones_like(t))
-        u_dual = generator(h_dual, z, r_dual, t_dual)
-        u = fwAD.unpack_dual(u_dual).primal
+        h_dual = fwAD.make_dual(Ht.detach(), v)
+        r_dual = fwAD.make_dual(r.detach(), torch.zeros_like(r))
+        t_dual = fwAD.make_dual(t.detach(), torch.ones_like(t))
+        u_dual = generator(h_dual, z.detach(), r_dual, t_dual)
         dudt = fwAD.unpack_dual(u_dual).tangent
+    dudt = (torch.zeros_like(u) if dudt is None else dudt).detach()
 
     # Step 6: stop-gradient MeanFlow target.
     tr = (t - r).view(B, 1, 1, 1)

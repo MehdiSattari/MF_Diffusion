@@ -41,7 +41,9 @@ def test_loss_and_param_grads():
     assert loss.ndim == 0 and torch.isfinite(loss), loss
     loss.backward()
 
-    # Gradients must reach BOTH sub-networks (this is the forward/reverse-AD check).
+    # Gradients must reach BOTH sub-networks AND be non-zero. (The encoder
+    # gradient being exactly zero was a real bug: computing u and d/dt u in one
+    # dual pass drops the reverse edge to Z. This asserts the fix holds.)
     enc_grad = [p.grad for p in enc.parameters() if p.grad is not None]
     gen_grad = [p.grad for p in gen.parameters() if p.grad is not None]
     assert len(enc_grad) > 0, "no gradients reached the ENCODER"
@@ -50,6 +52,8 @@ def test_loss_and_param_grads():
 
     enc_norm = torch.sqrt(sum((g ** 2).sum() for g in enc_grad))
     gen_norm = torch.sqrt(sum((g ** 2).sum() for g in gen_grad))
+    assert enc_norm > 0, "ENCODER gradient is zero — it would not train"
+    assert gen_norm > 0, "GENERATOR gradient is zero — it would not train"
     print(f"OK meanflow loss={loss.item():.4f} mse={metrics['mse'].item():.4f} | "
           f"grad-norm enc={enc_norm:.3e} gen={gen_norm:.3e}")
 
