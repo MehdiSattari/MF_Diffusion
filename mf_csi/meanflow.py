@@ -50,13 +50,23 @@ def sample_r_t(batch_size: int, cfg: MeanFlowConfig, device) -> Tuple[torch.Tens
 
 
 def augment_history(past: torch.Tensor, cfg: MeanFlowConfig) -> torch.Tensor:
-    """X~ = sqrt(rho) X + N, rho drawn from a random SNR in [snr_db_min, snr_db_max]."""
+    """Additive CSI-estimation-error noise at a random SNR in [snr_db_min, snr_db_max]:
+
+        X~ = X + sigma * N,   sigma chosen per-sample so that  signal_power / noise_power = SNR.
+
+    This PRESERVES the signal scale, unlike the sqrt(rho)*X + N form: that rescaling
+    (up to 10x at 20 dB) makes the autoregressive rollout mix 10x-scaled observed
+    frames with 1x-scaled predicted frames, which inverts the NMSE-vs-SNR ordering
+    and destabilizes training. Additive noise keeps every frame at its natural scale.
+    """
     if not cfg.noise_aug:
         return past
     B = past.shape[0]
     snr_db = torch.empty(B, device=past.device).uniform_(cfg.snr_db_min, cfg.snr_db_max)
-    rho = (10.0 ** (snr_db / 10.0)).view(B, *([1] * (past.dim() - 1)))
-    return torch.sqrt(rho) * past + torch.randn_like(past)
+    rho = 10.0 ** (snr_db / 10.0)                            # linear SNR [B]
+    power = past.pow(2).flatten(1).mean(dim=1)               # mean per-element signal power [B]
+    sigma = torch.sqrt(power / rho).view(B, *([1] * (past.dim() - 1)))
+    return past + torch.randn_like(past) * sigma
 
 
 def meanflow_loss(encoder, generator, past: torch.Tensor, future: torch.Tensor,
