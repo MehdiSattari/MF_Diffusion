@@ -24,7 +24,23 @@ Models" as a MeanFlow model that learns the *average velocity* field, enabling
 - [x] **Step 6 — Training loop + SLURM** (`scripts/train.py`): warmup, grad
       clipping, EMA, periodic AR-NMSE eval, checkpoint/resume.
 
-## Training
+## Diffusion DiU baseline (paper reproduction)
+
+A faithful reimplementation of the paper's original **DiU** (ConvLSTM next-frame
+predictor + `diffusers` `UNet2DModel`, predict-x0, cosine schedule T=2000, DDIM
+20-step deterministic sampling), on the same Sionna data — for a like-for-like
+comparison against the MeanFlow variant.
+
+```bash
+pip install "diffusers>=0.27"
+python -m tests.test_diffusion         # shapes / grads / DDIM rollout
+python -m scripts.smoke_diffusion      # short train + AR NMSE
+python -m scripts.train_diffusion --out-dir runs/diu1 --steps 50000
+```
+
+Code: `mf_csi/models/diu.py`, `mf_csi/diffusion.py`, `scripts/train_diffusion.py`.
+
+## Training (MeanFlow)
 
 ```bash
 # quick GPU validation (tests + smokes):

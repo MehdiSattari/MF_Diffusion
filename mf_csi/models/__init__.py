@@ -1,6 +1,7 @@
 from .conv_lstm import ConvLSTMCell, ConvLSTM
 from .encoder import TemporalEncoder
 from .unet import UNet, UNetGenerator, TimePairEmbedding
+from .diu import DiUEncoder, DiUNet
 
 __all__ = [
     "ConvLSTMCell",
@@ -9,4 +10,6 @@ __all__ = [
     "UNet",
     "UNetGenerator",
     "TimePairEmbedding",
+    "DiUEncoder",
+    "DiUNet",
 ]

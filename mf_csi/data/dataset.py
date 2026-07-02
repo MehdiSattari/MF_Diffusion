@@ -44,6 +44,12 @@ def _normalize(csi: np.ndarray, mode: str):
         scale = np.where((mx - mn) > 1e-12, mx - mn, 1.0)
         out = (csi - mn[:, None, None, None, None]) / scale[:, None, None, None, None]
         stats = {"mode": "minmax", "min": mn, "scale": scale}
+    elif mode == "minmax11":
+        mn = flat.min(axis=1)
+        mx = flat.max(axis=1)
+        scale = np.where((mx - mn) > 1e-12, mx - mn, 1.0)
+        out = 2.0 * (csi - mn[:, None, None, None, None]) / scale[:, None, None, None, None] - 1.0
+        stats = {"mode": "minmax11", "min": mn, "scale": scale}
     elif mode == "std":
         mu = flat.mean(axis=1)
         sd = flat.std(axis=1)
@@ -65,6 +71,10 @@ def denormalize(x: torch.Tensor, stats: Dict) -> torch.Tensor:
         mn = torch.as_tensor(stats["min"], device=x.device, dtype=x.dtype)
         sc = torch.as_tensor(stats["scale"], device=x.device, dtype=x.dtype)
         return x * sc[:, None, None, None, None] + mn[:, None, None, None, None]
+    if mode == "minmax11":
+        mn = torch.as_tensor(stats["min"], device=x.device, dtype=x.dtype)
+        sc = torch.as_tensor(stats["scale"], device=x.device, dtype=x.dtype)
+        return (x + 1.0) * 0.5 * sc[:, None, None, None, None] + mn[:, None, None, None, None]
     if mode == "std":
         mu = torch.as_tensor(stats["mean"], device=x.device, dtype=x.dtype)
         sc = torch.as_tensor(stats["scale"], device=x.device, dtype=x.dtype)

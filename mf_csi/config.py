@@ -50,9 +50,10 @@ class DataConfig:
     num_future: int = 10                     # Nf  (length of H_future / Y)
 
     # --- Normalization of CSI values fed to the model ---
-    # "minmax"  -> per-sample scale to [0, 1]  (paper's choice)
-    # "std"     -> per-sample zero-mean / unit-std  (often better for flow models)
-    # "none"    -> use Sionna's unit-power normalization as-is
+    # "minmax"   -> per-sample scale to [0, 1]
+    # "minmax11" -> per-sample scale to [-1, 1]  (diffusion convention; DiU uses this)
+    # "std"      -> per-sample zero-mean / unit-std
+    # "none"     -> use Sionna's unit-power normalization as-is
     normalization: str = "minmax"
 
     # --- Runtime ---
@@ -175,6 +176,40 @@ class TrainConfig:
 
 
 @dataclass
+class DiUConfig:
+    """Diffusion DiU: ConvLSTM next-frame predictor + diffusers UNet2DModel, DDIM.
+
+    Faithful to the paper's original code: the ConvLSTM emits a 2-channel next-frame
+    estimate Z, concatenated onto the noisy diffusion frame; the U-Net predicts the
+    clean frame x0 (prediction_type='sample'); cosine schedule, DDIM sampling.
+    """
+    # ConvLSTM predictor (conditioning encoder)
+    lstm_hidden: int = 128
+    lstm_kernel: int = 3
+    lstm_layers: int = 1
+    z_channels: int = 2                  # ConvLSTM output channels (conditioning)
+    lstm_activation: str = "relu"        # "relu" | "none"
+
+    # diffusers UNet2DModel
+    unet_width: int = 32
+    unet_layers_per_block: int = 2
+    unet_norm_groups: int = 1
+
+    # diffusion
+    num_train_timesteps: int = 2000
+    beta_schedule: str = "squaredcos_cap_v2"
+    prediction_type: str = "sample"      # predict clean x0
+    sampling_steps: int = 20
+    ddim_eta: float = 0.0
+    huber_delta: float = 0.016
+    deterministic_init: bool = True      # start the sampler from zeros (paper behaviour)
+
+    # history noise augmentation (per-sample random SNR)
+    train_snr_min: float = -20.0
+    train_snr_max: float = 20.0
+
+
+@dataclass
 class Config:
     """Top-level container."""
     data: DataConfig = field(default_factory=DataConfig)
@@ -183,3 +218,4 @@ class Config:
     meanflow: MeanFlowConfig = field(default_factory=MeanFlowConfig)
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
+    diu: DiUConfig = field(default_factory=DiUConfig)
