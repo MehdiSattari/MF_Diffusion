@@ -23,6 +23,7 @@ from mf_csi.data import CSIStreamDataset, make_fixed_eval_set
 from mf_csi.models import TemporalEncoder, UNetGenerator
 from mf_csi.meanflow import meanflow_loss
 from mf_csi.inference import autoregressive_predict, nmse, nmse_db
+from mf_csi.diffusion import corrupt_history
 from mf_csi.ema import EMA
 
 
@@ -60,10 +61,12 @@ def lr_at(step: int, cfg) -> float:
 @torch.no_grad()
 def evaluate(enc_eval, gen_eval, val_batches, cfg, device):
     per_step_sum = None
+    snr = cfg.train.eval_snr_db
     for b in val_batches:
         past, future = b["past"].to(device), b["future"].to(device)
+        hist = past if snr is None else corrupt_history(past, snr, snr)
         pred = autoregressive_predict(
-            enc_eval, gen_eval, past, future.shape[1],
+            enc_eval, gen_eval, hist, future.shape[1],
             seed_std=cfg.inference.seed_std, step_noise_std=cfg.inference.step_noise_std)
         ps, _ = nmse(pred, future)
         per_step_sum = ps if per_step_sum is None else per_step_sum + ps

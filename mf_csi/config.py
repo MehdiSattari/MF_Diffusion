@@ -21,7 +21,7 @@ where the size-2 axis stacks the real and imaginary parts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Tuple
+from typing import Tuple, Optional
 import json
 
 
@@ -178,6 +178,7 @@ class TrainConfig:
     ckpt_every: int = 5000
     val_samples: int = 256
     val_batch_size: int = 64
+    eval_snr_db: Optional[float] = 20.0   # inference SNR for periodic eval (None = clean)
 
     out_dir: str = "runs/meanflow_diu"
     seed: int = 0

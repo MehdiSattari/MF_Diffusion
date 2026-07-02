@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 from mf_csi.config import Config
 from mf_csi.data import CSIStreamDataset, make_fixed_eval_set
 from mf_csi.models.diu import DiUEncoder, DiUNet
-from mf_csi.diffusion import make_scheduler, diffusion_loss, ddim_ar_predict
+from mf_csi.diffusion import make_scheduler, diffusion_loss, ddim_ar_predict, corrupt_history
 from mf_csi.inference import nmse, nmse_db
 from mf_csi.ema import EMA
 
@@ -56,9 +56,11 @@ def random_split_batch(past, future):
 @torch.no_grad()
 def evaluate(encoder, unet, scheduler, val_batches, cfg, device):
     per_step_sum = None
+    snr = cfg.train.eval_snr_db
     for b in val_batches:
         past, future = b["past"].to(device), b["future"].to(device)
-        pred = ddim_ar_predict(encoder, unet, scheduler, past, future.shape[1], cfg.diu)
+        hist = past if snr is None else corrupt_history(past, snr, snr)
+        pred = ddim_ar_predict(encoder, unet, scheduler, hist, future.shape[1], cfg.diu)
         ps, _ = nmse(pred, future)
         per_step_sum = ps if per_step_sum is None else per_step_sum + ps
     per_step = per_step_sum / len(val_batches)
