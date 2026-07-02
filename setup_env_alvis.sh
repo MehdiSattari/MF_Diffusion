@@ -57,8 +57,8 @@ pip install "numpy<2.0" scipy matplotlib importlib_resources \
             "mitsuba>=3.2.0,<3.6.0" "ipywidgets>=8.0.4" "ipydatawidgets==4.3.2" \
             "pythreejs>=2.4.2" "jupyterlab-widgets==3.0.5"
 
-# 4) Project utilities.
-pip install pyyaml tqdm
+# 4) Diffusion DiU baseline + project utilities.
+pip install "diffusers>=0.27" pyyaml tqdm
 
 echo ">>> Verifying imports"
 python - <<'PY'

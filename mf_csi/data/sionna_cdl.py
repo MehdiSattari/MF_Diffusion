@@ -106,7 +106,8 @@ class CDLChannelGenerator:
         self._used_freqs = tf.constant(all_freqs[idx])
         self._sampling_frequency = 1.0 / cfg.ofdm_symbol_duration
 
-    def _make_cdl(self, model: str, delay_spread_s: float):
+    def _make_cdl(self, model: str, delay_spread_s: float,
+                  min_speed_ms: float, max_speed_ms: float):
         return self._CDL(
             model=model,
             delay_spread=delay_spread_s,
@@ -114,18 +115,45 @@ class CDLChannelGenerator:
             ut_array=self._ut_array,
             bs_array=self._bs_array,
             direction="downlink",
-            min_speed=self.cfg.min_speed_kmh * _KMH_TO_MS,
-            max_speed=self.cfg.max_speed_kmh * _KMH_TO_MS,
+            min_speed=min_speed_ms,
+            max_speed=max_speed_ms,
         )
+
+    def _sample_params(self):
+        """Draw (model, delay_spread_s, min_speed_ms, max_speed_ms) for one batch."""
+        cfg = self.cfg
+        rng = self._rng
+        model = str(rng.choice(cfg.cdl_models))
+        if cfg.param_sampling == "matlab_mixture":
+            # Delay spread: environment mixture (Indoor / UMa / RMa), per the MATLAB code.
+            env = int(rng.choice(3, p=np.asarray(cfg.env_probs)))
+            if env == 0:                       # Indoor
+                ds = rng.rayleigh(30e-9)
+            elif env == 1:                     # UMa
+                ds = rng.lognormal(np.log(150e-9), 0.3)
+            else:                              # RMa
+                ds = rng.lognormal(np.log(350e-9), 0.4)
+            ds = float(np.clip(ds, 10e-9, 600e-9))
+            # Velocity: mobility mixture (Pedestrian / Urban / Highway), km/h.
+            mob = int(rng.choice(3, p=np.asarray(cfg.mobility_probs)))
+            if mob == 0:                       # Pedestrian
+                v = max(1.0, rng.normal(4.0, 0.5))
+            elif mob == 1:                     # Urban
+                v = float(np.clip(rng.normal(30.0, 10.0), 10.0, 60.0))
+            else:                              # Highway
+                v = float(np.clip(rng.normal(120.0, 30.0), 60.0, 250.0))
+            speed_ms = v * _KMH_TO_MS
+            return model, ds, speed_ms, speed_ms     # fixed speed for the batch
+        # uniform fallback
+        ds = float(rng.uniform(cfg.min_delay_spread_ns, cfg.max_delay_spread_ns)) * 1e-9
+        return (model, ds,
+                cfg.min_speed_kmh * _KMH_TO_MS, cfg.max_speed_kmh * _KMH_TO_MS)
 
     def generate(self, batch_size: int) -> np.ndarray:
         """Return one batch of CSI sequences, shape [B, T, 2, Nt, Nc] (float32)."""
         cfg = self.cfg
-        model = str(self._rng.choice(cfg.cdl_models))
-        delay_spread_s = float(
-            self._rng.uniform(cfg.min_delay_spread_ns, cfg.max_delay_spread_ns)
-        ) * 1e-9
-        cdl = self._make_cdl(model, delay_spread_s)
+        model, delay_spread_s, min_speed_ms, max_speed_ms = self._sample_params()
+        cdl = self._make_cdl(model, delay_spread_s, min_speed_ms, max_speed_ms)
 
         # Channel impulse response over the sequence length.
         #   a   : [B, num_rx, rx_ant, num_tx, tx_ant, num_paths, T]

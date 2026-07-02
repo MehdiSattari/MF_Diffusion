@@ -40,6 +40,14 @@ class DataConfig:
 
     # --- CDL channel randomization ---
     cdl_models: Tuple[str, ...] = ("A", "B", "C", "D", "E")
+    # Parameter sampling per batch:
+    #   "matlab_mixture" -> match the paper's MATLAB dataset (environment mixture for
+    #                       delay spread, mobility mixture for velocity, ~1-250 km/h).
+    #   "uniform"        -> simple uniform ranges below.
+    param_sampling: str = "matlab_mixture"
+    env_probs: Tuple[float, ...] = (0.4, 0.4, 0.2)       # Indoor, UMa, RMa (delay spread)
+    mobility_probs: Tuple[float, ...] = (0.3, 0.4, 0.3)  # Pedestrian, Urban, Highway (velocity)
+    # Used only when param_sampling == "uniform":
     min_speed_kmh: float = 30.0
     max_speed_kmh: float = 120.0
     min_delay_spread_ns: float = 50.0
