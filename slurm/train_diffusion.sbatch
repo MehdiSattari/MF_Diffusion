@@ -23,9 +23,11 @@ source "${VENV_DIR}/bin/activate"
 export TF_CPP_MIN_LOG_LEVEL=3
 
 OUT="${OUT:-runs/diu_${SLURM_JOB_ID}}"
-STEPS="${STEPS:-50000}"
+STEPS="${STEPS:-80000}"
 EXTRA=""
-if [ -n "${RESUME:-}" ]; then EXTRA="--resume ${RESUME}"; fi
+if [ -n "${RESUME:-}" ]; then EXTRA="${EXTRA} --resume ${RESUME}"; fi
+if [ -n "${LR:-}" ]; then EXTRA="${EXTRA} --lr ${LR}"; fi
+if [ -n "${BATCH:-}" ]; then EXTRA="${EXTRA} --batch-size ${BATCH}"; fi
 
 timestamp=$(date +%y%m%d_%H%M)
 LOG="logs/diu_${timestamp}.txt"

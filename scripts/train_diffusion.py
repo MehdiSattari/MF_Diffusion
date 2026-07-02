@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import time
 import torch
@@ -39,9 +40,12 @@ def parse_args():
 
 
 def lr_at(step, cfg):
-    if cfg.train.warmup_steps > 0 and step < cfg.train.warmup_steps:
-        return cfg.train.lr * (step + 1) / cfg.train.warmup_steps
-    return cfg.train.lr
+    """Linear warmup, then cosine decay to ~1% of peak (OneCycle-like)."""
+    peak, warm, total = cfg.train.lr, cfg.train.warmup_steps, cfg.train.total_steps
+    if warm > 0 and step < warm:
+        return peak * (step + 1) / warm
+    prog = (step - warm) / max(1, total - warm)
+    return peak * (0.01 + 0.99 * 0.5 * (1.0 + math.cos(math.pi * min(1.0, prog))))
 
 
 def random_split_batch(past, future):
