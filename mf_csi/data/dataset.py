@@ -33,11 +33,20 @@ from ..config import DataConfig
 from .sionna_cdl import CDLChannelGenerator
 
 
-def _normalize(csi: np.ndarray, mode: str):
+def _normalize(csi: np.ndarray, mode: str, global_ab=None):
     """Normalize a batch [B, T, 2, Nt, Nc]. Returns (csi_norm, stats) where stats
-    holds the per-sample parameters needed to invert the transform."""
+    holds the parameters needed to invert the transform.
+
+    global_ab = (a, b): fixed global min/max scalars, required for the "global_*"
+    modes (matches the paper's single dataset-wide min-max)."""
     B = csi.shape[0]
     flat = csi.reshape(B, -1)
+    if mode == "global_minmax11":
+        a, b = global_ab
+        scale = (b - a) if (b - a) > 1e-12 else 1.0
+        out = 2.0 * (csi - a) / scale - 1.0
+        stats = {"mode": "global_minmax11", "a": float(a), "b": float(b)}
+        return out.astype(np.float32), stats
     if mode == "minmax":
         mn = flat.min(axis=1)
         mx = flat.max(axis=1)
@@ -67,6 +76,9 @@ def _normalize(csi: np.ndarray, mode: str):
 def denormalize(x: torch.Tensor, stats: Dict) -> torch.Tensor:
     """Invert :func:`_normalize` for a tensor [B, T, 2, Nt, Nc]."""
     mode = stats["mode"]
+    if mode == "global_minmax11":
+        a, b = stats["a"], stats["b"]
+        return (x + 1.0) * 0.5 * (b - a) + a
     if mode == "minmax":
         mn = torch.as_tensor(stats["min"], device=x.device, dtype=x.dtype)
         sc = torch.as_tensor(stats["scale"], device=x.device, dtype=x.dtype)
@@ -96,11 +108,13 @@ class CSIStreamDataset(IterableDataset):
     [B, Nf, 2, Nt, Nc], and ``stats`` (normalization parameters).
     """
 
-    def __init__(self, cfg: DataConfig, batch_size: int, steps_per_epoch: Optional[int] = None):
+    def __init__(self, cfg: DataConfig, batch_size: int, steps_per_epoch: Optional[int] = None,
+                 global_ab=None):
         super().__init__()
         self.cfg = cfg
         self.batch_size = batch_size
         self.steps_per_epoch = steps_per_epoch  # None -> truly infinite
+        self.global_ab = global_ab              # (a, b) for global_* normalization
         self._gen: Optional[CDLChannelGenerator] = None
 
     def _ensure_gen(self):
@@ -114,12 +128,13 @@ class CSIStreamDataset(IterableDataset):
         count = 0
         while self.steps_per_epoch is None or count < self.steps_per_epoch:
             csi = self._gen.generate(self.batch_size)
-            csi, stats = _normalize(csi, self.cfg.normalization)
+            csi, stats = _normalize(csi, self.cfg.normalization, self.global_ab)
             yield _split_batch(csi, self.cfg, stats)
             count += 1
 
 
-def make_fixed_eval_set(cfg: DataConfig, num_samples: int, batch_size: int) -> list:
+def make_fixed_eval_set(cfg: DataConfig, num_samples: int, batch_size: int,
+                        global_ab=None) -> list:
     """Generate a fixed list of evaluation batches once (reproducible)."""
     gen = CDLChannelGenerator(cfg)
     batches = []
@@ -127,7 +142,22 @@ def make_fixed_eval_set(cfg: DataConfig, num_samples: int, batch_size: int) -> l
     while remaining > 0:
         b = min(batch_size, remaining)
         csi = gen.generate(b)
-        csi, stats = _normalize(csi, cfg.normalization)
+        csi, stats = _normalize(csi, cfg.normalization, global_ab)
         batches.append(_split_batch(csi, cfg, stats))
         remaining -= b
     return batches
+
+
+def estimate_global_minmax(cfg: DataConfig, num_samples: int = 2000, batch_size: int = 256):
+    """Estimate a single global (min, max) over raw CSI, for global_* normalization.
+    Matches the paper's dataset-wide min-max (fit once, applied to train + eval)."""
+    gen = CDLChannelGenerator(cfg)
+    a, b = np.inf, -np.inf
+    remaining = num_samples
+    while remaining > 0:
+        n = min(batch_size, remaining)
+        csi = gen.generate(n)
+        a = min(a, float(csi.min()))
+        b = max(b, float(csi.max()))
+        remaining -= n
+    return a, b

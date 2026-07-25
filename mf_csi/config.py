@@ -100,6 +100,14 @@ class EncoderConfig:
     dropout: float = 0.2
     norm_groups: int = 1                 # GroupNorm with 1 group (per paper)
     final_activation: str = "none"       # "none" | "tanh"
+    # Informative-prior (residual-flow) MeanFlow: the encoder additionally emits a
+    # 2-channel next-frame point estimate mu(Z) ~= E[Y|history], used to CENTER the
+    # flow's source distribution (H^1 ~ N(mu, sigma^2)) instead of N(0, sigma^2).
+    # The flow then only transports the residual around a good mean, so a single
+    # 1-NFE draw already sits near the conditional mean (good NMSE) WITHOUT
+    # collapsing the prior width -- the spread stays for the distributional story.
+    predict_mu: bool = True              # build the mu head
+    mu_channels: int = 2                 # real/imag next-frame point estimate
 
 
 @dataclass
@@ -135,6 +143,24 @@ class MeanFlowConfig:
         u_tgt = v - (t - r) * d/dt u_theta
     with a stop-gradient, and the loss is an adaptively-weighted ||u - sg(u_tgt)||^2.
     """
+    # Source (noise endpoint) scale: eps ~ N(0, source_std^2). sigma=1 is standard
+    # MeanFlow; a SMALL sigma (0.1-0.3) makes the one-step output nearly
+    # deterministic and mean-seeking (low sample variance -> good NMSE, stable AR
+    # rollout), mirroring the diffusion DiU's deterministic zero-init DDIM. As
+    # sigma -> 0 the objective degenerates into direct regression.
+    #
+    # With informative_prior=True the source is CENTERED on the encoder's point
+    # estimate mu(Z), so sigma is the width of the RESIDUAL prior (on std-normalized
+    # data). We keep a genuinely wide sigma=1 -- the good NMSE comes from the
+    # informative mean, not from suppressing the variance.
+    source_std: float = 1.0
+
+    # Informative (data-dependent) prior: H^1 ~ N(mu(Z), sigma^2), mu trained by an
+    # auxiliary MSE-to-Y loss and stop-gradient'd where it seeds the flow, so mu
+    # learns ONLY the mean and the flow learns residual transport around it.
+    informative_prior: bool = True
+    mu_loss_weight: float = 1.0          # weight of the auxiliary MSE(mu, Y) term
+
     # (r, t) sampling: t >= r, with a fraction forced to r == t (flow-matching).
     time_sampler: str = "lognorm"        # "lognorm" | "uniform"
     lognorm_mean: float = -0.4           # logit-normal mean (P_mean)
@@ -154,8 +180,10 @@ class MeanFlowConfig:
 @dataclass
 class InferenceConfig:
     """1-step MeanFlow AR sampling (the paper's Algorithm 4)."""
-    seed_std: float = 1.0            # H^1 ~ N(0, seed_std^2) — matches training eps ~ N(0,1)
+    seed_std: float = 1.0            # H^1 ~ N(mu, seed_std^2) — MUST equal MeanFlowConfig.source_std
     step_noise_std: float = 0.0      # optional per-step stochasticity (0 = deterministic MMSE-style)
+    mean_samples: int = 1            # 1-NFE draws averaged per frame (1 = true one-step; low-sigma
+                                     # training makes averaging unnecessary)
 
 
 @dataclass

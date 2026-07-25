@@ -43,6 +43,10 @@ def parse_args():
     p.add_argument("--snrs", type=str, default="0,10,20",
                    help="comma-separated inference SNRs in dB; empty for clean-only")
     p.add_argument("--n-show", type=int, default=3, help="samples in the GT-vs-pred figure")
+    p.add_argument("--mean-samples", type=int, default=None,
+                   help="1-NFE draws averaged per frame (default: config value, 1)")
+    p.add_argument("--source-std", type=float, default=None,
+                   help="override the flow source sigma (default: read from checkpoint)")
     return p.parse_args()
 
 
@@ -55,7 +59,7 @@ def load_models(ckpt_path, cfg, device, weights):
     enc.eval(); gen.eval()
     print(f"loaded {weights} weights from {ckpt_path} (step {ck.get('step')}, "
           f"best {ck.get('best_nmse_db')})")
-    return enc, gen
+    return enc, gen, ck.get("source_std")
 
 
 def csi_magnitude(x):
@@ -75,7 +79,8 @@ def eval_nmse(enc, gen, batches, cfg, device, snr_db=None):
         hist = past if snr_db is None else corrupt_history(past, snr_db, cfg)
         pred = autoregressive_predict(enc, gen, hist, future.shape[1],
                                       seed_std=cfg.inference.seed_std,
-                                      step_noise_std=cfg.inference.step_noise_std)
+                                      step_noise_std=cfg.inference.step_noise_std,
+                                      num_samples=cfg.inference.mean_samples)
         ps, _ = nmse(pred, future)
         ps_sum = ps if ps_sum is None else ps_sum + ps
     ps = ps_sum / len(batches)
@@ -130,11 +135,22 @@ def plot_pred_vs_gt(pred, future, path, n_show=3):
 def main():
     args = parse_args()
     cfg = Config()
+    cfg.data.normalization = "std"               # matches MeanFlow training (informative prior)
+    if args.mean_samples is not None:
+        cfg.inference.mean_samples = args.mean_samples
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out = args.out_dir or os.path.join(os.path.dirname(args.ckpt), "eval")
     os.makedirs(out, exist_ok=True)
 
-    enc, gen = load_models(args.ckpt, cfg, device, args.weights)
+    enc, gen, ck_sigma = load_models(args.ckpt, cfg, device, args.weights)
+    # Seed scale must match the training source scale: CLI > checkpoint > config.
+    sigma = args.source_std if args.source_std is not None else ck_sigma
+    if sigma is not None:
+        cfg.meanflow.source_std = sigma
+    cfg.inference.seed_std = cfg.meanflow.source_std
+    print(f"source/seed sigma = {cfg.inference.seed_std} "
+          f"({'ckpt' if ck_sigma is not None and args.source_std is None else 'cli/config'}) | "
+          f"mean_samples = {cfg.inference.mean_samples}")
     batches = make_fixed_eval_set(cfg.data, args.n_samples, args.batch_size)
 
     # NMSE vs step, clean history.
@@ -162,7 +178,8 @@ def main():
     past, future = b["past"].to(device), b["future"].to(device)
     pred = autoregressive_predict(enc, gen, past, future.shape[1],
                                   seed_std=cfg.inference.seed_std,
-                                  step_noise_std=cfg.inference.step_noise_std)
+                                  step_noise_std=cfg.inference.step_noise_std,
+                                  num_samples=cfg.inference.mean_samples)
     plot_pred_vs_gt(pred, future, os.path.join(out, "csi_pred_vs_gt.png"), n_show=args.n_show)
 
     print(f"\nsaved to {out}/: nmse_vs_step.png"

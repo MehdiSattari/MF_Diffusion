@@ -13,6 +13,7 @@ Usage (on Alvis, inside the venv):
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import time
 import torch
@@ -37,6 +38,9 @@ def parse_args():
     p.add_argument("--ckpt-every", type=int, default=None)
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--source-std", type=float, default=None,
+                   help="sigma of the flow source eps~N(0,sigma^2); small (0.1-0.3) "
+                        "= near-deterministic mean-seeking 1-NFE output")
     return p.parse_args()
 
 
@@ -49,13 +53,19 @@ def build_config(args) -> Config:
     if args.eval_every is not None:  cfg.train.eval_every = args.eval_every
     if args.ckpt_every is not None:  cfg.train.ckpt_every = args.ckpt_every
     if args.seed is not None:        cfg.train.seed = args.seed
+    if args.source_std is not None:  cfg.meanflow.source_std = args.source_std
+    # Inference seed scale MUST match the training source scale.
+    cfg.inference.seed_std = cfg.meanflow.source_std
     return cfg
 
 
 def lr_at(step: int, cfg) -> float:
-    if cfg.train.warmup_steps > 0 and step < cfg.train.warmup_steps:
-        return cfg.train.lr * (step + 1) / cfg.train.warmup_steps
-    return cfg.train.lr
+    """Linear warmup, then cosine decay to ~1% of peak (matches the diffusion run)."""
+    peak, warm, total = cfg.train.lr, cfg.train.warmup_steps, cfg.train.total_steps
+    if warm > 0 and step < warm:
+        return peak * (step + 1) / warm
+    prog = (step - warm) / max(1, total - warm)
+    return peak * (0.01 + 0.99 * 0.5 * (1.0 + math.cos(math.pi * min(1.0, prog))))
 
 
 @torch.no_grad()
@@ -67,16 +77,17 @@ def evaluate(enc_eval, gen_eval, val_batches, cfg, device):
         hist = past if snr is None else corrupt_history(past, snr, snr)
         pred = autoregressive_predict(
             enc_eval, gen_eval, hist, future.shape[1],
-            seed_std=cfg.inference.seed_std, step_noise_std=cfg.inference.step_noise_std)
+            seed_std=cfg.inference.seed_std, step_noise_std=cfg.inference.step_noise_std,
+            num_samples=cfg.inference.mean_samples)
         ps, _ = nmse(pred, future)
         per_step_sum = ps if per_step_sum is None else per_step_sum + ps
     per_step = per_step_sum / len(val_batches)
     return per_step, per_step.mean()
 
 
-def save_ckpt(path, step, enc, gen, ema_enc, ema_gen, opt, best):
+def save_ckpt(path, step, enc, gen, ema_enc, ema_gen, opt, best, source_std):
     torch.save({
-        "step": step, "best_nmse_db": best,
+        "step": step, "best_nmse_db": best, "source_std": source_std,
         "enc": enc.state_dict(), "gen": gen.state_dict(),
         "ema_enc": ema_enc.state_dict(), "ema_gen": ema_gen.state_dict(),
         "opt": opt.state_dict(),
@@ -86,12 +97,15 @@ def save_ckpt(path, step, enc, gen, ema_enc, ema_gen, opt, best):
 def main():
     args = parse_args()
     cfg = build_config(args)
+    cfg.data.normalization = "std"           # per-sample zero-mean/unit-std: makes the
+                                             # wide sigma=1 informative-prior scale-matched
     os.makedirs(cfg.train.out_dir, exist_ok=True)
     torch.manual_seed(cfg.train.seed)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"device={device} out_dir={cfg.train.out_dir} steps={cfg.train.total_steps} "
-          f"batch={cfg.train.batch_size} lr={cfg.train.lr}")
+          f"batch={cfg.train.batch_size} lr={cfg.train.lr} "
+          f"source_std={cfg.meanflow.source_std} mean_samples={cfg.inference.mean_samples}")
 
     enc = TemporalEncoder(cfg.encoder).to(device)
     gen = UNetGenerator(cfg.generator).to(device)
@@ -124,7 +138,7 @@ def main():
 
     enc.train(); gen.train()
     t0 = time.time()
-    running, running_n = 0.0, 0
+    running, running_mu, running_n = 0.0, 0.0, 0
     for step in range(start_step, cfg.train.total_steps):
         batch = next(train_iter)
         past, future = batch["past"].to(device), batch["future"].to(device)
@@ -142,13 +156,14 @@ def main():
         # EMA weights are meaningful long before ~1/(1-decay) steps have passed.
         eff_decay = min(cfg.train.ema_decay, (1.0 + step) / (10.0 + step))
         ema_enc.update(enc, eff_decay); ema_gen.update(gen, eff_decay)
-        running += m["mse"].item(); running_n += 1
+        running += m["mse"].item(); running_mu += m.get("mu_mse", 0.0*m["mse"]).item(); running_n += 1
 
         if step % cfg.train.log_every == 0:
             rate = (step - start_step + 1) / (time.time() - t0)
             print(f"step {step:6d} | mse {running / running_n:.4f} "
+                  f"| mu_mse {running_mu / running_n:.4f} "
                   f"| lr {lr_at(step, cfg):.2e} | {rate:.1f} it/s", flush=True)
-            running, running_n = 0.0, 0
+            running, running_mu, running_n = 0.0, 0.0, 0
 
         if step > 0 and step % cfg.train.eval_every == 0:
             ema_enc.copy_to(enc_eval); ema_gen.copy_to(gen_eval)
@@ -163,14 +178,17 @@ def main():
             if avg_db < best:
                 best = avg_db
                 save_ckpt(os.path.join(cfg.train.out_dir, "ckpt_best.pt"),
-                          step, enc, gen, ema_enc, ema_gen, opt, best)
+                          step, enc, gen, ema_enc, ema_gen, opt, best,
+                          cfg.meanflow.source_std)
 
         if step > 0 and step % cfg.train.ckpt_every == 0:
             save_ckpt(os.path.join(cfg.train.out_dir, "ckpt_last.pt"),
-                      step, enc, gen, ema_enc, ema_gen, opt, best)
+                      step, enc, gen, ema_enc, ema_gen, opt, best,
+                      cfg.meanflow.source_std)
 
     save_ckpt(os.path.join(cfg.train.out_dir, "ckpt_last.pt"),
-              cfg.train.total_steps - 1, enc, gen, ema_enc, ema_gen, opt, best)
+              cfg.train.total_steps - 1, enc, gen, ema_enc, ema_gen, opt, best,
+              cfg.meanflow.source_std)
     print(f"done. best avg NMSE {best:.2f} dB. checkpoints in {cfg.train.out_dir}")
 
 

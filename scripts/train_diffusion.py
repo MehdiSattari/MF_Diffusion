@@ -20,7 +20,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from mf_csi.config import Config
-from mf_csi.data import CSIStreamDataset, make_fixed_eval_set
+from mf_csi.data import CSIStreamDataset, make_fixed_eval_set, estimate_global_minmax
 from mf_csi.models.diu import DiUEncoder, DiUNet
 from mf_csi.diffusion import make_scheduler, diffusion_loss, ddim_ar_predict, corrupt_history
 from mf_csi.inference import nmse, nmse_db
@@ -71,8 +71,8 @@ def evaluate(encoder, unet, scheduler, val_batches, cfg, device):
     return per_step, per_step.mean()
 
 
-def save_ckpt(path, step, enc, unet, ema_enc, ema_unet, opt, best):
-    torch.save({"step": step, "best_nmse_db": best,
+def save_ckpt(path, step, enc, unet, ema_enc, ema_unet, opt, best, global_ab=None):
+    torch.save({"step": step, "best_nmse_db": best, "global_ab": global_ab,
                 "enc": enc.state_dict(), "unet": unet.state_dict(),
                 "ema_enc": ema_enc.state_dict(), "ema_unet": ema_unet.state_dict(),
                 "opt": opt.state_dict()}, path)
@@ -81,7 +81,7 @@ def save_ckpt(path, step, enc, unet, ema_enc, ema_unet, opt, best):
 def main():
     args = parse_args()
     cfg = Config()
-    cfg.data.normalization = "minmax11"              # diffusion works in [-1, 1]
+    cfg.data.normalization = "global_minmax11"       # global [-1,1] min-max (matches the paper)
     if args.steps: cfg.train.total_steps = args.steps
     if args.batch_size: cfg.train.batch_size = args.batch_size
     if args.lr: cfg.train.lr = args.lr
@@ -116,10 +116,19 @@ def main():
         best = ck.get("best_nmse_db", float("inf"))
         print(f"resumed from {args.resume} at step {start_step}")
 
+    # Global min-max (fit once), reused for train + eval so the space is consistent.
+    global_ab = ck.get("global_ab") if (args.resume and os.path.isfile(args.resume)) else None
+    if global_ab is None:
+        print("estimating global min-max ...")
+        global_ab = estimate_global_minmax(cfg.data, num_samples=4000, batch_size=256)
+    print(f"global norm (a, b) = ({global_ab[0]:.4f}, {global_ab[1]:.4f})")
+
     print("building fixed validation set ...")
-    val_batches = make_fixed_eval_set(cfg.data, cfg.train.val_samples, cfg.train.val_batch_size)
+    val_batches = make_fixed_eval_set(cfg.data, cfg.train.val_samples,
+                                      cfg.train.val_batch_size, global_ab=global_ab)
     train_iter = iter(DataLoader(
-        CSIStreamDataset(cfg.data, batch_size=cfg.train.batch_size, steps_per_epoch=None),
+        CSIStreamDataset(cfg.data, batch_size=cfg.train.batch_size, steps_per_epoch=None,
+                         global_ab=global_ab),
         batch_size=None))
 
     enc.train(); unet.train()
@@ -156,14 +165,14 @@ def main():
             if avg_db < best:
                 best = avg_db
                 save_ckpt(os.path.join(cfg.train.out_dir, "ckpt_best.pt"),
-                          step, enc, unet, ema_enc, ema_unet, opt, best)
+                          step, enc, unet, ema_enc, ema_unet, opt, best, global_ab)
 
         if step > 0 and step % cfg.train.ckpt_every == 0:
             save_ckpt(os.path.join(cfg.train.out_dir, "ckpt_last.pt"),
-                      step, enc, unet, ema_enc, ema_unet, opt, best)
+                      step, enc, unet, ema_enc, ema_unet, opt, best, global_ab)
 
     save_ckpt(os.path.join(cfg.train.out_dir, "ckpt_last.pt"),
-              cfg.train.total_steps - 1, enc, unet, ema_enc, ema_unet, opt, best)
+              cfg.train.total_steps - 1, enc, unet, ema_enc, ema_unet, opt, best, global_ab)
     print(f"done. best avg NMSE {best:.2f} dB. checkpoints in {cfg.train.out_dir}")
 
 

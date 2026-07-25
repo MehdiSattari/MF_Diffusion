@@ -51,9 +51,10 @@ def load_models(ckpt_path, cfg, device, weights):
     ek, uk = ("ema_enc", "ema_unet") if weights == "ema" else ("enc", "unet")
     enc.load_state_dict(ck[ek]); unet.load_state_dict(ck[uk])
     enc.eval(); unet.eval()
+    global_ab = ck.get("global_ab")
     print(f"loaded {weights} weights from {ckpt_path} (step {ck.get('step')}, "
-          f"best {ck.get('best_nmse_db')})")
-    return enc, unet
+          f"best {ck.get('best_nmse_db')}, global_ab {global_ab})")
+    return enc, unet, global_ab
 
 
 @torch.no_grad()
@@ -69,11 +70,11 @@ def eval_nmse(enc, unet, scheduler, batches, cfg, device, snr=None):
     return ps, ps.mean()
 
 
-def fixed_velocity_batches(cfg, v, n_samples, bs):
+def fixed_velocity_batches(cfg, v, n_samples, bs, global_ab):
     dcfg = replace(cfg.data, param_sampling="uniform",
                    min_speed_kmh=float(v), max_speed_kmh=float(v),
-                   normalization="minmax11")
-    return make_fixed_eval_set(dcfg, n_samples, bs)
+                   normalization=cfg.data.normalization)
+    return make_fixed_eval_set(dcfg, n_samples, bs, global_ab=global_ab)
 
 
 def _curve_plot(curves, path, title, xlabel="prediction step"):
@@ -120,14 +121,14 @@ def plot_pred_vs_gt(pred, future, path, n_show=3):
 def main():
     args = parse_args()
     cfg = Config()
-    cfg.data.normalization = "minmax11"
+    cfg.data.normalization = "global_minmax11"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out = args.out_dir or os.path.join(os.path.dirname(args.ckpt), "eval")
     os.makedirs(out, exist_ok=True)
 
-    enc, unet = load_models(args.ckpt, cfg, device, args.weights)
+    enc, unet, global_ab = load_models(args.ckpt, cfg, device, args.weights)
     scheduler = make_scheduler(cfg.diu)
-    batches = make_fixed_eval_set(cfg.data, args.n_samples, args.batch_size)
+    batches = make_fixed_eval_set(cfg.data, args.n_samples, args.batch_size, global_ab=global_ab)
 
     # --- NMSE vs step, per SNR (mixture data) ---
     snrs = [float(s) for s in args.snrs.split(",") if s.strip()]
@@ -147,7 +148,7 @@ def main():
     vcurves = []
     print(f"\n[NMSE vs step | fixed velocity, SNR {args.vel_snr:g} dB]")
     for v in vels:
-        vb = fixed_velocity_batches(cfg, v, args.n_samples, args.batch_size)
+        vb = fixed_velocity_batches(cfg, v, args.n_samples, args.batch_size, global_ab)
         ps, ov = eval_nmse(enc, unet, scheduler, vb, cfg, device, snr=args.vel_snr)
         vcurves.append((f"{v:g} km/h", ps))
         print(f"  {v:g} km/h | avg {nmse_db(ov).item():6.2f} | "

@@ -34,7 +34,26 @@ def test_encoder_shapes_and_grad():
     print(f"OK TemporalEncoder Z {tuple(z.shape)} | params {n_params/1e3:.1f}k")
 
 
+def test_encoder_mu_head():
+    """Informative-prior head: enc(x, return_mu=True) -> (Z, mu), mu is a
+    2-channel next-frame point estimate the same spatial size as the CSI frame."""
+    cfg = Config()
+    assert cfg.encoder.predict_mu, "predict_mu should default True"
+    enc = TemporalEncoder(cfg.encoder)
+    B = 3
+    Np, Nt, Nc = cfg.data.num_past, cfg.data.num_bs_ant, cfg.data.num_subcarriers_used
+    x = torch.randn(B, Np, cfg.encoder.in_channels, Nt, Nc)
+    z, mu = enc(x, return_mu=True)
+    assert z.shape == (B, cfg.encoder.latent_channels, Nt, Nc), z.shape
+    assert mu is not None and mu.shape == (B, cfg.encoder.mu_channels, Nt, Nc), None if mu is None else mu.shape
+    # default (no flag) is backward compatible: returns Z only.
+    z_only = enc(x)
+    assert torch.is_tensor(z_only) and z_only.shape == z.shape
+    print(f"OK mu head -> mu {tuple(mu.shape)} | backward-compat enc(x)->Z {tuple(z_only.shape)}")
+
+
 if __name__ == "__main__":
     test_convlstm_final_hidden_shape()
     test_encoder_shapes_and_grad()
+    test_encoder_mu_head()
     print("\nAll encoder tests passed.")

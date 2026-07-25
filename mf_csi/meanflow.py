@@ -1,32 +1,45 @@
-"""MeanFlow training objective for CSI prediction (the paper's Algorithm 2).
+"""MeanFlow training objective for CSI prediction (the paper's Algorithm 2),
+with an INFORMATIVE (data-dependent) prior.
 
 Given a batch of history/future CSI pairs, this computes the MeanFlow loss for
 the DiU generator conditioned on the ConvLSTM latent Z:
 
   1. Optionally noise-augment the history X -> X~ (CSI-estimation-error model).
-  2. Z = encoder(X~).
+  2. (Z, mu) = encoder(X~).  mu ~= E[Y | history] is a next-frame point estimate.
   3. Sample (r, t) with t >= r; Y = next future frame.
-  4. Flow interpolant  H^t = (1-t) Y + t eps ;  velocity  v = eps - Y.
+  4. Flow interpolant  H^t = (1-t) Y + t * S,  with the SOURCE endpoint
+        S = mu.detach() + sigma * eps ,   eps ~ N(0, I)        (informative prior)
+     or S = sigma * eps                                        (classic prior),
+     and instantaneous velocity  v = S - Y.
+     Centering S on mu means the flow only transports the RESIDUAL around a good
+     mean, so a single 1-NFE draw already sits near the conditional mean (good
+     NMSE) even with a genuinely WIDE sigma -- no variance suppression needed.
   5. u from a normal forward pass (keeps the reverse-mode graph to BOTH the
      generator and the encoder-through-Z); d/dt u from a SEPARATE forward-mode-AD
-     pass with time tangent (v, 0, 1) on (H^t, r, t) — value only.
+     pass with time tangent (v, 0, 1) on (H^t, r, t) -- value only.
   6. Target  u_tgt = v - (t - r) d/dt u  (stop-gradient).
-  7. Adaptively-weighted loss  sg(w) * ||u - u_tgt||^2,  w = 1/(||.||^2 + c)^p.
+  7. Adaptively-weighted flow loss  sg(w) * ||u - u_tgt||^2,  w = 1/(||.||^2 + c)^p,
+     PLUS an auxiliary point-estimate loss  mu_loss_weight * MSE(mu, Y).
 
-Two design notes:
+Gradient routing: mu is stop-gradient'd where it seeds S, so the flow loss never
+pulls mu -- mu is trained ONLY by the auxiliary MSE (it learns the mean), while
+the flow (and the conditioning Z) is trained by the weighted MeanFlow loss (it
+learns the residual transport). Clean separation, stable in practice.
+
+Two design notes (unchanged from the base implementation):
   * forward_ad (dual tensors), not torch.func.jvp: torch.func.jvp treats the
     closed-over parameters as constants, so no weight gradients would flow.
   * Separate passes for u and d/dt u: computing both in ONE dual pass drops the
     reverse-mode edge from u back to Z (a plain, non-dual input), which silently
     zeroes the ENCODER gradient. Since the target is stop-gradient, d/dt u needs
     no backward graph, so a second detached forward-AD pass is the clean fix.
-    (Cost: one extra generator forward per step — fuseable later if needed.)
 """
 
 from __future__ import annotations
 
 from typing import Dict, Tuple
 import torch
+import torch.nn.functional as F
 import torch.autograd.forward_ad as fwAD
 
 from .config import MeanFlowConfig
@@ -80,17 +93,23 @@ def meanflow_loss(encoder, generator, past: torch.Tensor, future: torch.Tensor,
     device = future.device
     B = future.shape[0]
 
-    # Steps 1-2: conditioning latent from (noise-augmented) history.
+    # Steps 1-2: conditioning latent + (optional) next-frame point estimate.
     x = augment_history(past, cfg)
-    z = encoder(x)                                  # [B, Cz, Nt, Nc]
+    z, mu = encoder(x, return_mu=True)              # z:[B,Cz,Nt,Nc]  mu:[B,2,Nt,Nc] or None
 
-    # Step 3-4: next-frame target, interpolant, instantaneous velocity.
+    # Step 3-4: next-frame target, source endpoint, instantaneous velocity.
     Y = future[:, 0]                                # [B, 2, Nt, Nc]
-    eps = torch.randn_like(Y)
+    eps = torch.randn_like(Y) * cfg.source_std      # residual noise
+    use_mu = cfg.informative_prior and (mu is not None)
+    if use_mu:
+        S = mu.detach() + eps                       # H^1 ~ N(mu, sigma^2); mu stop-grad here
+    else:
+        S = eps                                     # H^1 ~ N(0, sigma^2)  (classic prior)
+
     r, t = sample_r_t(B, cfg, device)
     t_b = t.view(B, 1, 1, 1)
-    Ht = (1.0 - t_b) * Y + t_b * eps
-    v = eps - Y
+    Ht = (1.0 - t_b) * Y + t_b * S
+    v = S - Y
 
     # Step 5a: u with a NORMAL forward pass -> full reverse-mode graph, so the
     # loss backpropagates into BOTH the generator AND the encoder (through Z).
@@ -112,15 +131,24 @@ def meanflow_loss(encoder, generator, past: torch.Tensor, future: torch.Tensor,
     tr = (t - r).view(B, 1, 1, 1)
     u_tgt = (v - tr * dudt).detach()
 
-    # Step 7: adaptively-weighted squared error.
+    # Step 7a: adaptively-weighted squared error (the flow / residual-transport term).
     err = u - u_tgt
     sq = err.pow(2).flatten(1).mean(dim=1)          # [B] per-sample MSE
     w = 1.0 / (sq.detach() + cfg.loss_eps).pow(cfg.loss_power)
-    loss = (w * sq).mean()
+    flow_loss = (w * sq).mean()
+
+    # Step 7b: auxiliary point-estimate loss -- trains mu toward E[Y|history].
+    if use_mu:
+        mu_mse = F.mse_loss(mu, Y)
+    else:
+        mu_mse = torch.zeros((), device=device)
+    loss = flow_loss + cfg.mu_loss_weight * mu_mse
 
     metrics = {
         "loss": loss.detach(),
+        "flow_loss": flow_loss.detach(),
         "mse": sq.mean().detach(),
+        "mu_mse": mu_mse.detach(),
         "frac_r_neq_t": (r != t).float().mean().detach(),
     }
     return loss, metrics

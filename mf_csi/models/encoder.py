@@ -10,9 +10,19 @@ Pipeline (matches the paper's ConvLSTM description):
 
 Z is a spatial feature map so it can be concatenated channel-wise with the noisy
 CSI frame inside the U-Net generator (Step 3).
+
+Informative-prior extension: when ``cfg.predict_mu`` is set, a second lightweight
+head maps the SAME ConvLSTM hidden state to a 2-channel next-frame point estimate
+``mu(Z) ~= E[Y | history]``. This mu is used to CENTER the MeanFlow source
+distribution (H^1 ~ N(mu, sigma^2)) so a single 1-NFE draw already sits near the
+conditional mean -- recovering NMSE without narrowing the prior. mu is trained by
+an auxiliary MSE-to-Y loss (see meanflow.py); the conditioning latent Z is
+unchanged, so nothing about the generator's interface changes.
 """
 
 from __future__ import annotations
+
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -42,11 +52,27 @@ class TemporalEncoder(nn.Module):
         else:
             raise ValueError(f"Unknown final_activation: {cfg.final_activation}")
 
-    def forward(self, h_past: torch.Tensor) -> torch.Tensor:
-        """h_past: [B, Np, in_channels, Nt, Nc] -> Z: [B, latent_channels, Nt, Nc]."""
+        # Optional next-frame point-estimate head (linear output: std-normalized
+        # CSI is signed, so no activation). Reads the ConvLSTM hidden state directly.
+        self.predict_mu = bool(getattr(cfg, "predict_mu", False))
+        if self.predict_mu:
+            self.mu_head = nn.Conv2d(cfg.hidden_channels,
+                                     getattr(cfg, "mu_channels", 2),
+                                     kernel_size=3, padding=1)
+
+    def forward(self, h_past: torch.Tensor, return_mu: bool = False
+                ) -> Union[torch.Tensor, Tuple[torch.Tensor, Optional[torch.Tensor]]]:
+        """h_past: [B, Np, in_channels, Nt, Nc].
+
+        return_mu=False -> Z [B, latent_channels, Nt, Nc]  (backward compatible).
+        return_mu=True  -> (Z, mu) with mu [B, mu_channels, Nt, Nc] or None.
+        """
         hidden, _ = self.convlstm(h_past)     # [B, hidden, Nt, Nc]
         z = self.norm(hidden)
         z = self.dropout(z)
         z = self.proj(z)
         z = self.final_act(z)
-        return z
+        if not return_mu:
+            return z
+        mu = self.mu_head(hidden) if self.predict_mu else None
+        return z, mu
