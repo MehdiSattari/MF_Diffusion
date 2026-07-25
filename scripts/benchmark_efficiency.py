@@ -32,6 +32,7 @@ import torch
 from mf_csi.config import Config
 from mf_csi.models import TemporalEncoder, UNetGenerator
 from mf_csi.models.diu import DiUEncoder, DiUNet
+from mf_csi.models import JointRegressor
 from mf_csi.diffusion import make_scheduler, ddim_ar_predict
 from mf_csi.inference import autoregressive_predict
 
@@ -104,6 +105,7 @@ def parse_args():
     p.add_argument("--cpu", action="store_true", help="also time on CPU (slow for DiU)")
     p.add_argument("--diu-ckpt", type=str, default=None)
     p.add_argument("--mf-ckpt", type=str, default=None)
+    p.add_argument("--reg-ckpt", type=str, default=None)
     p.add_argument("--out-dir", type=str, default="runs/bench")
     return p.parse_args()
 
@@ -130,10 +132,15 @@ def main():
                {"enc": "ema_enc", "gen": "ema_gen"}, dev)
     maybe_load(type("O", (), {"enc": enc_d, "unet": unet_d})(), args.diu_ckpt,
                {"enc": "ema_enc", "unet": "ema_unet"}, dev)
+    reg = JointRegressor(cfg.regression).to(dev).eval()
+    if args.reg_ckpt and os.path.isfile(args.reg_ckpt):
+        ckr = torch.load(args.reg_ckpt, map_location=dev)
+        reg.load_state_dict(ckr.get("ema", ckr.get("model")))
 
     params = {
         "MeanFlow": {"encoder": count_params(enc_m), "generator": count_params(gen_m)},
         "DiU": {"encoder": count_params(enc_d), "generator": count_params(unet_d)},
+        "JointReg": {"encoder": 0, "generator": count_params(reg)},
     }
     for k, v in params.items():
         v["total"] = v["encoder"] + v["generator"]
@@ -151,6 +158,10 @@ def main():
         past = torch.randn(B, Np, 2, Nt, Nc, device=dev)
         return lambda: ddim_ar_predict(enc_d, unet_d, scheduler, past, Nf, cfg.diu)
 
+    def reg_predict(B):
+        past = torch.randn(B, Np, 2, Nt, Nc, device=dev)
+        return lambda: reg(past)                       # all Nf frames in ONE forward
+
     diu_step_list = [int(s) for s in args.diu_steps.split(",") if s.strip()]
     diu_main_steps = cfg.diu.sampling_steps if cfg.diu.sampling_steps in diu_step_list else diu_step_list[-1]
 
@@ -158,6 +169,7 @@ def main():
     nfe = {
         "MeanFlow": {"encoder_evals": Nf, "generator_evals": Nf * args.mf_samples},
         "DiU": {"encoder_evals": Nf, "unet_evals": Nf * diu_main_steps},
+        "JointReg": {"encoder_evals": 1, "generator_evals": 1},   # one joint forward
     }
 
     # ---- FLOPs per horizon ----
@@ -165,13 +177,15 @@ def main():
         flops = {
             "MeanFlow": flops_of(mf_predict(1)),
             "DiU": flops_of(diu_predict(1, diu_main_steps)),
+            "JointReg": flops_of(reg_predict(1)),
         }
 
     # ---- latency + memory ----
     results = {}
     with torch.no_grad():
         for name, mk in [("MeanFlow", lambda B: mf_predict(B)),
-                         ("DiU", lambda B: diu_predict(B, diu_main_steps))]:
+                         ("DiU", lambda B: diu_predict(B, diu_main_steps)),
+                         ("JointReg", lambda B: reg_predict(B))]:
             r = {}
             m1, s1 = time_ms(mk(1), dev, args.warmup, args.repeats)
             mB, sB = time_ms(mk(args.batch), dev, args.warmup, args.repeats)
@@ -213,20 +227,20 @@ def main():
         return "n/a" if x is None else f"{x/1e9:.2f} GFLOPs"
 
     print("\n==================== PARAMETERS ====================")
-    for name in ("MeanFlow", "DiU"):
+    for name in ("MeanFlow", "DiU", "JointReg"):
         v = params[name]
         print(f"{name:9s} | enc {v['encoder']/1e6:6.3f}M | gen {v['generator']/1e6:6.3f}M "
               f"| total {v['total']/1e6:6.3f}M ({v['size_MB_fp32']:.1f} MB fp32)")
 
     print("\n============ PER-HORIZON COMPUTE (Nf frames) ============")
-    for name in ("MeanFlow", "DiU"):
+    for name in ("MeanFlow", "DiU", "JointReg"):
         ge = nfe[name].get("generator_evals", nfe[name].get("unet_evals"))
         print(f"{name:9s} | enc evals {nfe[name]['encoder_evals']:3d} | "
               f"gen/unet evals {ge:3d} | FLOPs {fmt_flops(flops[name])}")
 
     print(f"\n=========== LATENCY & MEMORY (device={dev}) ===========")
     print(f"DiU benchmarked at {diu_main_steps} NFE/frame; MeanFlow at {args.mf_samples} draw/frame")
-    for name in ("MeanFlow", "DiU"):
+    for name in ("MeanFlow", "DiU", "JointReg"):
         r = results[name]
         mem = "n/a" if r["peak_mem_MB_bB"] is None else f"{r['peak_mem_MB_bB']:.0f} MB"
         tp = "n/a" if r["throughput_sps_bB"] is None else f"{r['throughput_sps_bB']:.0f}/s"

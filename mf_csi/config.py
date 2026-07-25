@@ -247,6 +247,32 @@ class DiUConfig:
 
 
 @dataclass
+class RegressionConfig:
+    """Joint-horizon ConvLSTM regression baseline (JointRegressor).
+
+    A ConvLSTM temporal encoder over the history feeds a small conv decoder that
+    emits ALL Nf future frames in a SINGLE forward pass -- no autoregressive
+    rollout, hence NO exposure bias. Trained with plain MSE. This is the honest
+    rollout-free NMSE 'ceiling' and a clean ConvLSTM reference for the diffusion
+    and MeanFlow generators. Normalized in per-sample 'std' space (same as the
+    MeanFlow model) so physical-space NMSE is directly comparable after
+    denormalization."""
+    in_channels: int = 2
+    hidden_channels: int = 128           # ConvLSTM hidden (matches TemporalEncoder)
+    kernel_size: int = 3
+    num_layers: int = 1
+    decoder_channels: int = 128
+    num_res_blocks: int = 2
+    num_future: int = 10                 # frames emitted jointly (== data.num_future)
+    norm_groups: int = 8
+    dropout: float = 0.0
+    # history noise augmentation (per-sample random SNR), matches the other models
+    noise_aug: bool = True
+    snr_db_min: float = -20.0
+    snr_db_max: float = 20.0
+
+
+@dataclass
 class Config:
     """Top-level container."""
     data: DataConfig = field(default_factory=DataConfig)
@@ -256,3 +282,4 @@ class Config:
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     diu: DiUConfig = field(default_factory=DiUConfig)
+    regression: RegressionConfig = field(default_factory=RegressionConfig)

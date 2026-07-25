@@ -47,8 +47,9 @@ python -m scripts.train --out-dir "$OUT" --steps "$STEPS" $EXTRA >> "$LOG" 2>&1
 DIU_CKPT="${DIU_CKPT:-runs/diu_6793522/ckpt_best.pt}"
 if [ "${AUTO_COMPARE:-1}" != "0" ] && [ -f "$OUT/ckpt_best.pt" ] && [ -f "$DIU_CKPT" ]; then
   echo "===== AUTO COMPARE PLOT AT $(date) =====" | tee -a "$LOG"
+  REG_ARG=""; [ -n "${REG:-}" ] && [ -f "${REG}" ] && REG_ARG="--reg-ckpt ${REG}"
   python -m scripts.evaluate_compare --diu-ckpt "$DIU_CKPT" --mf-ckpt "$OUT/ckpt_best.pt" \
-      --snrs 20 --clean --out-dir "$OUT/compare" >> "$LOG" 2>&1 \
+      $REG_ARG --snrs 20 --clean --out-dir "$OUT/compare" >> "$LOG" 2>&1 \
       && echo "compare plot -> $OUT/compare/nmse_vs_step_compare.png" | tee -a "$LOG" \
       || echo "auto-compare failed (see $LOG)" | tee -a "$LOG"
 fi

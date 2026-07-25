@@ -30,6 +30,7 @@ NSAMPLES="${NSAMPLES:-256}"
 OUT="${OUT:-runs/compare}"
 EXTRA=""
 if [ -n "${CLEAN:-}" ]; then EXTRA="${EXTRA} --clean"; fi
+[ -n "${REG:-}" ] && EXTRA="${EXTRA} --reg-ckpt ${REG}"
 
 timestamp=$(date +%y%m%d_%H%M)
 LOG="logs/eval_compare_${timestamp}.txt"

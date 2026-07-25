@@ -25,6 +25,7 @@ export TF_CPP_MIN_LOG_LEVEL=3
 BATCH="${BATCH:-64}"; REPEATS="${REPEATS:-30}"; DIU_STEPS="${DIU_STEPS:-1,2,3,5,10,20}"
 EXTRA=""
 [ -n "${CPU:-}" ] && EXTRA="${EXTRA} --cpu"
+[ -n "${REG:-}" ] && EXTRA="${EXTRA} --reg-ckpt ${REG}"
 [ -n "${DIU_CKPT:-}" ] && EXTRA="${EXTRA} --diu-ckpt ${DIU_CKPT}"
 [ -n "${MF_CKPT:-}" ] && EXTRA="${EXTRA} --mf-ckpt ${MF_CKPT}"
 

@@ -1,0 +1,10 @@
+# Local (Mac/Linux) environment for SMALL, non-Sionna tasks:
+#   - CPU unit tests (tests/test_*.py)
+#   - the efficiency benchmark (random inputs, no data generation)
+#   - plotting / quick shape checks
+# Heavy work (Sionna channel generation + GPU training) runs on Alvis via the
+# cluster venv (see setup_env_alvis.sh). Do NOT put sionna/tensorflow here.
+numpy>=1.24
+torch>=2.1
+diffusers>=0.27      # DiU baseline (UNet2DModel); needed by benchmark/eval
+matplotlib>=3.7      # figures
