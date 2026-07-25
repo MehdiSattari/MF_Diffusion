@@ -427,6 +427,30 @@ wins on average — at 1 NFE with a wide `σ = 1` prior.
   `export DRJIT_LIBLLVM_PATH=$(ls $EBROOTLLVM/lib/libLLVM*.so* | head -n1)`.
 - **GPUs**: T4 for smoke tests, A40 for real runs.
 
+### Development & execution workflow
+
+The project is developed on a local machine but **executed entirely on Alvis** —
+one environment, so there is no local/cluster drift and no need to install
+Sionna (which is impractical on macOS). The local machine is an edit + git
+station only.
+
+1. **Edit locally** in a git clone of the repo (kept *outside* any cloud-synced
+   or sshfs-mounted folder — a plain local path like `~/dev/MF_CSI_Prediction`),
+   then `git commit` + `git push`. Run git natively on the machine that owns the
+   files; never over a network mount.
+2. **On Alvis**, `git pull`, then:
+   - **Fast/small** (CPU unit tests, plotting from an existing `*.json`): run
+     directly on a **login node** inside the venv — `bash run_tests.sh` finishes
+     in seconds, no queue.
+   - **Medium** (efficiency benchmark, which needs a GPU for latency; Sionna
+     smoke tests): a short interactive job —
+     `salloc -A your-slurm-account -p alvis --gpus-per-node=T4:1 -t 20`.
+   - **Heavy** (training): `sbatch` as usual.
+
+An **optional** local fallback env (`setup_env_local.sh`, `requirements-local.txt`)
+exists for hacking on pure-logic code offline (CPU tests only, no Sionna), but it
+is not the default path.
+
 ### Launch commands
 
 ```bash
@@ -452,10 +476,19 @@ DIU=runs/diu_<jobid>/ckpt_best.pt MF=runs/mf_<jobid>/ckpt_best.pt \
 
 ### CPU-only correctness tests (no Sionna required)
 
+Run all of them via the helper (login node in the venv, or the local fallback env):
+
+```bash
+bash run_tests.sh
+```
+
+Individually:
+
 ```bash
 python -m tests.test_encoder     # ConvLSTM + mu-head shapes / gradients
 python -m tests.test_meanflow    # objective: finite loss, gradients to both nets, mu-head grad
 python -m tests.test_inference   # autoregressive rollout shapes + NMSE properties
+python -m tests.test_regression  # JointRegressor (ConvLSTM baseline) shapes / gradients
 ```
 
 ---
