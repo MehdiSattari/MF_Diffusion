@@ -144,6 +144,9 @@ class UNet(nn.Module):
         c2 = cfg.base_channels * cfg.ch_mult
         emb, g, drop, heads = cfg.time_embed_dim, cfg.norm_groups, cfg.dropout, cfg.num_heads
         nres = cfg.num_res_blocks
+        _use_attn = getattr(cfg, "use_attention", True)
+        def mk_attn():
+            return SelfAttention2d(c2, heads, g) if _use_attn else nn.Identity()
 
         self.in_conv = nn.Conv2d(in_total, c1, 3, padding=1)
 
@@ -156,12 +159,12 @@ class UNet(nn.Module):
         cin = c1
         for _ in range(nres):
             self.enc2.append(ResBlock(cin, c2, emb, g, drop))
-            self.enc2_attn.append(SelfAttention2d(c2, heads, g))
+            self.enc2_attn.append(mk_attn())
             cin = c2
 
         # Bottleneck (half res, c2)
         self.mid_res1 = ResBlock(c2, c2, emb, g, drop)
-        self.mid_attn = SelfAttention2d(c2, heads, g)
+        self.mid_attn = mk_attn()
         self.mid_res2 = ResBlock(c2, c2, emb, g, drop)
 
         # Decoder up block 1 (half res): concat skip2 then 3x (ResBlock + Attn)
@@ -169,7 +172,7 @@ class UNet(nn.Module):
         cin = c2 + c2
         for _ in range(3):
             self.up1.append(ResBlock(cin, c2, emb, g, drop))
-            self.up1_attn.append(SelfAttention2d(c2, heads, g))
+            self.up1_attn.append(mk_attn())
             cin = c2
         self.up = Upsample(c2)
 

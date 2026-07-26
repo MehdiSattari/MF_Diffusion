@@ -131,6 +131,8 @@ class UNetConfig:
     num_heads: int = 1
     norm_groups: int = 8                 # GroupNorm groups (divides 32 and 64)
     dropout: float = 0.0
+    use_attention: bool = True           # self-attention at the 8x8 stage + bottleneck
+                                         # (False -> lightweight "small" backbone)
 
 
 @dataclass
@@ -227,15 +229,16 @@ class DiUConfig:
     z_channels: int = 2                  # ConvLSTM output channels (conditioning)
     lstm_activation: str = "relu"        # "relu" | "none"
 
-    # diffusers UNet2DModel -- Appendix-B spec of the paper: two resolution stages
-    # 32 -> 64 with single-head self-attention at the downsampled (8x8) stage and
-    # the bottleneck, two residual blocks per stage (~1.6M params, matching Table II).
-    # The earlier single-level width-32 no-attention config was ~0.82M and ran
-    # 3-4 dB short of the paper; this brings DiU's generator to paper strength.
-    unet_block_channels: Tuple[int, ...] = (32, 64)
-    unet_attention: bool = True          # self-attention at the 8x8 stage + bottleneck
+    # diffusers UNet2DModel. Default is PAPER-FAITHFUL: a single resolution level of
+    # width 32, no attention, GroupNorm(1) -- this matches the paper's committed
+    # config (config/Config.yml: Unet_block_out_channels=[32], DownBlock2D/UpBlock2D,
+    # norm_groups=1), NOT the 32->64+attention that Appendix B's *text* describes.
+    # A two-stage attention variant is available for experiments by setting e.g.
+    # unet_block_channels=(32, 64), unet_attention=True (needs norm_groups dividing both).
+    unet_block_channels: Tuple[int, ...] = (32,)
+    unet_attention: bool = False
     unet_layers_per_block: int = 2
-    unet_norm_groups: int = 8            # divides 32 and 64
+    unet_norm_groups: int = 1
     unet_width: int = 32                 # kept for reference (== block_channels[0])
 
     # diffusion

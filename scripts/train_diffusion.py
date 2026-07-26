@@ -25,6 +25,7 @@ from mf_csi.models.diu import DiUEncoder, DiUNet
 from mf_csi.diffusion import make_scheduler, diffusion_loss, ddim_ar_predict, corrupt_history
 from mf_csi.inference import nmse, nmse_db
 from mf_csi.ema import EMA
+from torch.optim.lr_scheduler import OneCycleLR
 
 
 def parse_args():
@@ -32,7 +33,10 @@ def parse_args():
     p.add_argument("--out-dir", type=str, default="runs/diu")
     p.add_argument("--steps", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=None)
-    p.add_argument("--lr", type=float, default=None)
+    p.add_argument("--lr", type=float, default=None)         # legacy (unused when unet/lstm lr set)
+    p.add_argument("--unet-lr", type=float, default=1e-3)    # paper: diffusion_lr
+    p.add_argument("--lstm-lr", type=float, default=1e-4)    # paper: LSTM_lr
+    p.add_argument("--ema-decay", type=float, default=0.95)  # paper: model_ema_decay
     p.add_argument("--eval-every", type=int, default=None)
     p.add_argument("--ckpt-every", type=int, default=None)
     p.add_argument("--resume", type=str, default=None)
@@ -101,9 +105,14 @@ def main():
     huber = nn.HuberLoss(delta=cfg.diu.huber_delta)
 
     params = list(enc.parameters()) + list(unet.parameters())
-    opt = torch.optim.Adam(params, lr=cfg.train.lr,
-                           betas=(cfg.train.adam_beta1, cfg.train.adam_beta2))
-    ema_enc, ema_unet = EMA(enc, cfg.train.ema_decay), EMA(unet, cfg.train.ema_decay)
+    # Paper recipe: separate LR groups (U-Net 1e-3, ConvLSTM encoder 1e-4), Adam
+    # default betas, no weight decay. (Under OneCycleLR with a scalar max_lr both
+    # groups follow the same 1e-3 schedule -- matching the paper's code behaviour.)
+    opt = torch.optim.Adam(unet.parameters(), lr=args.unet_lr)
+    opt.add_param_group({"params": list(enc.parameters()), "lr": args.lstm_lr})
+    # EMA decay 0.95, updated every 10 steps (paper recipe), evaluated as the model.
+    EMA_EVERY = 10
+    ema_enc, ema_unet = EMA(enc, args.ema_decay), EMA(unet, args.ema_decay)
     enc_eval = DiUEncoder(cfg.diu, in_channels=2).to(device)
     unet_eval = DiUNet(cfg.diu, data_channels=2, image_size=cfg.data.num_subcarriers_used).to(device)
 
@@ -115,6 +124,11 @@ def main():
         opt.load_state_dict(ck["opt"]); start_step = ck["step"] + 1
         best = ck.get("best_nmse_db", float("inf"))
         print(f"resumed from {args.resume} at step {start_step}")
+
+    # Paper LR schedule: OneCycle (warmup 25%, cosine anneal) over the full budget.
+    sched = OneCycleLR(opt, max_lr=args.unet_lr, total_steps=cfg.train.total_steps,
+                       pct_start=0.25, anneal_strategy="cos",
+                       last_epoch=(start_step - 1 if start_step > 0 else -1))
 
     # Global min-max (fit once), reused for train + eval so the space is consistent.
     global_ab = ck.get("global_ab") if (args.resume and os.path.isfile(args.resume)) else None
@@ -138,21 +152,20 @@ def main():
         past, future = batch["past"].to(device), batch["future"].to(device)
         history, target = random_split_batch(past, future)
 
-        for g in opt.param_groups:
-            g["lr"] = lr_at(step, cfg)
         loss, m = diffusion_loss(enc, unet, scheduler, history, target, cfg.diu, huber)
         opt.zero_grad(); loss.backward()
         if cfg.train.grad_clip_norm > 0:
             torch.nn.utils.clip_grad_norm_(params, cfg.train.grad_clip_norm)
         opt.step()
-        eff = min(cfg.train.ema_decay, (1.0 + step) / (10.0 + step))
-        ema_enc.update(enc, eff); ema_unet.update(unet, eff)
+        sched.step()
+        if step % EMA_EVERY == 0:
+            ema_enc.update(enc, args.ema_decay); ema_unet.update(unet, args.ema_decay)
         running += m["loss"].item(); running_n += 1
 
         if step % cfg.train.log_every == 0:
             rate = (step - start_step + 1) / (time.time() - t0)
             print(f"step {step:6d} | huber {running / running_n:.4f} "
-                  f"| lr {lr_at(step, cfg):.2e} | {rate:.1f} it/s", flush=True)
+                  f"| lr {opt.param_groups[0]['lr']:.2e} | {rate:.1f} it/s", flush=True)
             running, running_n = 0.0, 0
 
         if step > 0 and step % cfg.train.eval_every == 0:

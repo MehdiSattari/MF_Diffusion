@@ -47,6 +47,12 @@ def _normalize(csi: np.ndarray, mode: str, global_ab=None):
         out = 2.0 * (csi - a) / scale - 1.0
         stats = {"mode": "global_minmax11", "a": float(a), "b": float(b)}
         return out.astype(np.float32), stats
+    if mode == "global_std":
+        mu, sd = global_ab
+        sd = sd if sd > 1e-12 else 1.0
+        out = (csi - mu) / sd
+        stats = {"mode": "global_std", "mu": float(mu), "sd": float(sd)}
+        return out.astype(np.float32), stats
     if mode == "minmax":
         mn = flat.min(axis=1)
         mx = flat.max(axis=1)
@@ -79,6 +85,8 @@ def denormalize(x: torch.Tensor, stats: Dict) -> torch.Tensor:
     if mode == "global_minmax11":
         a, b = stats["a"], stats["b"]
         return (x + 1.0) * 0.5 * (b - a) + a
+    if mode == "global_std":
+        return x * stats["sd"] + stats["mu"]
     if mode == "minmax":
         mn = torch.as_tensor(stats["min"], device=x.device, dtype=x.dtype)
         sc = torch.as_tensor(stats["scale"], device=x.device, dtype=x.dtype)
@@ -161,3 +169,20 @@ def estimate_global_minmax(cfg: DataConfig, num_samples: int = 2000, batch_size:
         b = max(b, float(csi.max()))
         remaining -= n
     return a, b
+
+
+def estimate_global_std(cfg: DataConfig, num_samples: int = 4000, batch_size: int = 256):
+    """Estimate a single global (mean, std) over raw CSI, for global_std normalization.
+    One fixed scale (fit once, applied to train + eval) -> unit-variance data with no
+    per-sample leakage. Pairs with source_std=1 for the MeanFlow informative prior."""
+    gen = CDLChannelGenerator(cfg)
+    n_tot, s1, s2 = 0, 0.0, 0.0
+    remaining = num_samples
+    while remaining > 0:
+        n = min(batch_size, remaining)
+        x = gen.generate(n).astype(np.float64)
+        s1 += float(x.sum()); s2 += float((x * x).sum()); n_tot += x.size
+        remaining -= n
+    mu = s1 / n_tot
+    var = max(s2 / n_tot - mu * mu, 0.0)
+    return float(mu), float(np.sqrt(var))
