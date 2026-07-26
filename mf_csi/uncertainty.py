@@ -81,6 +81,33 @@ def _to_complex(x: torch.Tensor) -> torch.Tensor:
     return torch.complex(x[..., 0, :, :], x[..., 1, :, :])
 
 
+def outage_rate(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0,
+                epsilon: float = 0.1) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Risk-aware link adaptation: pick a rate to meet a target OUTAGE probability.
+
+    Using the K predicted channels the transmitter forms the predicted distribution of
+    the achievable MR rate C = log2(1 + snr*||h||^2) and selects R = epsilon-quantile of
+    that distribution (the rate it is 1-epsilon confident it can support). Outage occurs
+    if the TRUE channel cannot support R. A CALIBRATED generative model achieves empirical
+    outage ~ epsilon with high goodput; a deterministic model (K=1) cannot control outage.
+
+    samples [K,B,Nf,2,Nt,Nc], true [B,Nf,2,Nt,Nc] -> (goodput [Nf], empirical_outage [Nf]).
+    """
+    snr = 10.0 ** (snr_db / 10.0)
+    hp = _to_complex(samples)                                   # [K,B,Nf,Nt,Nc]
+    ht = _to_complex(true)                                      # [B,Nf,Nt,Nc]
+    c_pred = torch.log2(1.0 + snr * (hp.abs() ** 2).sum(dim=3))  # [K,B,Nf,Nc]
+    c_true = torch.log2(1.0 + snr * (ht.abs() ** 2).sum(dim=2))  # [B,Nf,Nc]
+    if c_pred.shape[0] == 1:
+        R = c_pred[0]                                          # point predictor: no distribution
+    else:
+        R = torch.quantile(c_pred, epsilon, dim=0)            # epsilon-outage rate
+    success = (c_true >= R).float()
+    goodput = (R * success).mean(dim=(0, 2))                   # [Nf]
+    outage = (1.0 - success).mean(dim=(0, 2))                  # [Nf]
+    return goodput, outage
+
+
 def spectral_efficiency(pred: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0
                         ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Downstream MR-precoding spectral efficiency (bits/s/Hz), per prediction step.

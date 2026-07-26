@@ -18,7 +18,7 @@ cd "$SLURM_SUBMIT_DIR"; mkdir -p logs runs/uq
 source "${VENV_DIR:-$HOME/MF_CSI_Prediction/venv}/bin/activate"
 export TF_CPP_MIN_LOG_LEVEL=3
 
-K="${K:-30}"; SNR="${SNR:-20}"
+K="${K:-30}"; SNR="${SNR:-20}"; STEP_NOISE="${STEP_NOISE:-0.0}"; EPS="${EPS:-0.1}"
 EXTRA=""
 [ -n "${MF:-}" ] && EXTRA="$EXTRA --mf-ckpt ${MF}"
 [ -n "${DIU:-}" ] && EXTRA="$EXTRA --diu-ckpt ${DIU}"
@@ -26,5 +26,5 @@ EXTRA=""
 
 ts=$(date +%y%m%d_%H%M); LOG="logs/uq_${ts}.txt"
 echo "===== UQ EVAL STARTED $(date) =====" | tee "$LOG"
-python -m scripts.evaluate_uncertainty --K "$K" --snr "$SNR" $EXTRA >> "$LOG" 2>&1
+python -m scripts.evaluate_uncertainty --K "$K" --snr "$SNR" --step-noise "$STEP_NOISE" --epsilon "$EPS" $EXTRA >> "$LOG" 2>&1
 echo "===== FINISHED $(date) =====" | tee -a "$LOG"

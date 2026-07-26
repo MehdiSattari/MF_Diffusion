@@ -33,7 +33,7 @@ from mf_csi.models.diu import DiUEncoder, DiUNet
 from mf_csi.diffusion import make_scheduler, ddim_ar_predict, corrupt_history
 from mf_csi.inference import autoregressive_predict, nmse, nmse_db
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
-                                spectral_efficiency)
+                                spectral_efficiency, outage_rate)
 
 
 def parse_args():
@@ -45,6 +45,9 @@ def parse_args():
     p.add_argument("--snr", type=float, default=20.0, help="inference SNR (history corruption)")
     p.add_argument("--n-samples", type=int, default=192)
     p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--step-noise", type=float, default=0.0,
+                   help="per-step rollout noise -> grows late-horizon spread (calibration)")
+    p.add_argument("--epsilon", type=float, default=0.1, help="target outage for risk-aware rate")
     p.add_argument("--out-dir", type=str, default="runs/uq")
     return p.parse_args()
 
@@ -70,9 +73,9 @@ def denorm_ensemble(samples, stats):
 
 
 @torch.no_grad()
-def mf_samples(enc, gen, hist, Nf, seed_std, K):
+def mf_samples(enc, gen, hist, Nf, seed_std, K, step_noise=0.0):
     out = [autoregressive_predict(enc, gen, hist, Nf, seed_std=seed_std,
-                                  step_noise_std=0.0, num_samples=1) for _ in range(K)]
+                                  step_noise_std=step_noise, num_samples=1) for _ in range(K)]
     return torch.stack(out, dim=0)                       # [K,B,Nf,2,Nt,Nc]
 
 
@@ -110,7 +113,7 @@ def main():
         for b in batches:
             past, future = b["past"].to(device), b["future"].to(device)
             hist = corrupt_history(past, args.snr, args.snr)
-            s = denorm_ensemble(mf_samples(enc, gen, hist, future.shape[1], seed_std, args.K), b["stats"])
+            s = denorm_ensemble(mf_samples(enc, gen, hist, future.shape[1], seed_std, args.K, args.step_noise), b["stats"])
             y = denormalize(future, b["stats"])
             accumulate(agg, "nmse", ensemble_mean_nmse(s, y)[0])
             accumulate(agg, "crps", crps(s, y)[0])
@@ -118,6 +121,8 @@ def main():
             accumulate(agg, "skill", spread_skill(s, y)[1])
             accumulate(agg, "se_pred", spectral_efficiency(s.mean(0), y, args.snr)[0])
             accumulate(agg, "se_perfect", spectral_efficiency(y, y, args.snr)[1])
+            g_o, o_o = outage_rate(s, y, args.snr, args.epsilon)
+            accumulate(agg, "goodput", g_o); accumulate(agg, "outage", o_o)
             for lv in levels:
                 accumulate(agg, f"cov{lv}", coverage(s, y, lv)[1].item())
         results["MeanFlow"] = {k: (float(np.mean(v)) if k.startswith("cov")
@@ -143,6 +148,8 @@ def main():
             accumulate(agg, "nmse", ensemble_mean_nmse(s, y)[0]); accumulate(agg, "crps", crps(s, y)[0])
             accumulate(agg, "spread", spread_skill(s, y)[0]); accumulate(agg, "skill", spread_skill(s, y)[1])
             accumulate(agg, "se_pred", spectral_efficiency(s.mean(0), y, args.snr)[0])
+            g_o, o_o = outage_rate(s, y, args.snr, args.epsilon)
+            accumulate(agg, "goodput", g_o); accumulate(agg, "outage", o_o)
             for lv in levels:
                 accumulate(agg, f"cov{lv}", coverage(s, y, lv)[1].item())
         results["DiU"] = {k: (float(np.mean(v)) if k.startswith("cov")
@@ -155,23 +162,30 @@ def main():
         reg = JointRegressor(cfg.regression).to(device)
         reg.load_state_dict(ck.get("ema", ck.get("model"))); reg.eval()
         batches = to_batches(raw, cfg.data, "std", None)
-        nm, se = [], []
+        agg = {}
         for b in batches:
             past, future = b["past"].to(device), b["future"].to(device)
             hist = corrupt_history(past, args.snr, args.snr)
             pred = denormalize(reg(hist), b["stats"]); y = denormalize(future, b["stats"])
-            nm.append(nmse(pred, future)[0]); se.append(spectral_efficiency(pred, y, args.snr)[0])
-        results["ConvLSTM"] = {"nmse": torch.stack(nm).mean(0).tolist(),
-                               "se_pred": torch.stack(se).mean(0).tolist()}
-        print(f"[ConvLSTM] point NMSE {nmse_db(torch.tensor(results['ConvLSTM']['nmse']).mean()).item():.2f} dB")
+            s = pred.unsqueeze(0)                              # K=1 degenerate ensemble (a point)
+            accumulate(agg, "nmse", ensemble_mean_nmse(s, y)[0])   # now vs y (bug fixed)
+            accumulate(agg, "se_pred", spectral_efficiency(pred, y, args.snr)[0])
+            g_o, o_o = outage_rate(s, y, args.snr, args.epsilon)
+            accumulate(agg, "goodput", g_o); accumulate(agg, "outage", o_o)
+            for lv in levels:                                 # coverage of a point ~ 0 (the contrast)
+                accumulate(agg, f"cov{lv}", coverage(s, y, lv)[1].item())
+        results["ConvLSTM"] = {k: (float(np.mean(v)) if k.startswith("cov")
+                                   else torch.stack(v).mean(0).tolist()) for k, v in agg.items()}
+        print(f"[ConvLSTM] point NMSE {nmse_db(torch.tensor(results['ConvLSTM']['nmse']).mean()).item():.2f} dB "
+              f"| cov0.9 {results['ConvLSTM']['cov0.9']:.3f} (point -> ~0)")
 
     # ---------------- figures ----------------
     steps = list(range(1, cfg.data.num_future + 1))
     # reliability
     fig, ax = plt.subplots(figsize=(4.6, 4.4))
     ax.plot([0, 1], [0, 1], "k:", lw=1, label="ideal")
-    for name in ("MeanFlow", "DiU"):
-        if name in results:
+    for name in ("MeanFlow", "DiU", "ConvLSTM"):
+        if name in results and f"cov{levels[0]}" in results[name]:
             emp = [results[name][f"cov{lv}"] for lv in levels]
             ax.plot(levels, emp, marker="o", label=name)
     ax.set_xlabel("nominal coverage"); ax.set_ylabel("empirical coverage")
@@ -193,6 +207,20 @@ def main():
         ax.set_xlabel("prediction step"); ax.set_ylabel(ylab); ax.set_title(title)
         ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
         fig.tight_layout(); fig.savefig(os.path.join(args.out_dir, fname), dpi=150); plt.close(fig)
+
+    # outage-constrained goodput + empirical outage (risk-aware link adaptation)
+    if any("goodput" in results.get(n, {}) for n in ("MeanFlow", "DiU", "ConvLSTM")):
+        fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.2, 3.8))
+        for name in ("MeanFlow", "DiU", "ConvLSTM"):
+            if name in results and "goodput" in results[name]:
+                a1.plot(steps, results[name]["goodput"], marker="o", label=name)
+                a2.plot(steps, results[name]["outage"], marker="o", label=name)
+        a2.axhline(args.epsilon, color="k", ls="--", lw=1, label=f"target {args.epsilon:g}")
+        a1.set_title(f"Goodput @ {args.epsilon:g}-outage"); a1.set_ylabel("bits/s/Hz")
+        a2.set_title("Empirical outage"); a2.set_ylabel("outage prob")
+        for a in (a1, a2):
+            a.set_xlabel("prediction step"); a.grid(True, alpha=0.3); a.legend(fontsize=8)
+        fig.tight_layout(); fig.savefig(os.path.join(args.out_dir, "outage.png"), dpi=150); plt.close(fig)
 
     with open(os.path.join(args.out_dir, "uncertainty.json"), "w") as f:
         json.dump(results, f, indent=2)

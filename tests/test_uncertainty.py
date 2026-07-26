@@ -10,7 +10,7 @@ Run:  python -m tests.test_uncertainty
 import torch
 
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
-                                spectral_efficiency)
+                                spectral_efficiency, outage_rate)
 
 
 def test_calibrated_ensemble():
@@ -48,7 +48,23 @@ def test_spectral_efficiency_bound():
     print(f"OK SE | pred {se_pred.mean().item():.3f} <= perfect {se_perfect.mean().item():.3f} b/s/Hz")
 
 
+def test_outage_calibration():
+    torch.manual_seed(0)
+    B, Nf, Nt, Nc, K = 64, 10, 16, 16, 200
+    # iid channels: predicted samples and truth from the same distribution -> a
+    # calibrated predictor should achieve empirical outage ~ epsilon.
+    m = torch.randn(B, Nf, 2, Nt, Nc)
+    samples = m.unsqueeze(0) + 0.5 * torch.randn(K, B, Nf, 2, Nt, Nc)
+    truth = m + 0.5 * torch.randn(B, Nf, 2, Nt, Nc)
+    eps = 0.1
+    gp, out = outage_rate(samples, truth, snr_db=20.0, epsilon=eps)
+    assert gp.shape == (Nf,) and out.shape == (Nf,)
+    assert abs(out.mean().item() - eps) < 0.05, f"empirical outage {out.mean().item():.3f} vs target {eps}"
+    print(f"OK outage | empirical {out.mean().item():.3f} ~ target {eps} | goodput {gp.mean().item():.3f} b/s/Hz")
+
+
 if __name__ == "__main__":
     test_calibrated_ensemble()
     test_spectral_efficiency_bound()
+    test_outage_calibration()
     print("\nUncertainty/downstream metric tests passed.")
