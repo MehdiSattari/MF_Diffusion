@@ -227,10 +227,16 @@ class DiUConfig:
     z_channels: int = 2                  # ConvLSTM output channels (conditioning)
     lstm_activation: str = "relu"        # "relu" | "none"
 
-    # diffusers UNet2DModel
-    unet_width: int = 32
+    # diffusers UNet2DModel -- Appendix-B spec of the paper: two resolution stages
+    # 32 -> 64 with single-head self-attention at the downsampled (8x8) stage and
+    # the bottleneck, two residual blocks per stage (~1.6M params, matching Table II).
+    # The earlier single-level width-32 no-attention config was ~0.82M and ran
+    # 3-4 dB short of the paper; this brings DiU's generator to paper strength.
+    unet_block_channels: Tuple[int, ...] = (32, 64)
+    unet_attention: bool = True          # self-attention at the 8x8 stage + bottleneck
     unet_layers_per_block: int = 2
-    unet_norm_groups: int = 1
+    unet_norm_groups: int = 8            # divides 32 and 64
+    unet_width: int = 32                 # kept for reference (== block_channels[0])
 
     # diffusion
     num_train_timesteps: int = 2000

@@ -38,14 +38,23 @@ class DiUNet(nn.Module):
     def __init__(self, cfg: DiUConfig, data_channels: int = 2, image_size: int = 16):
         super().__init__()
         from diffusers import UNet2DModel      # imported lazily so the rest of the
-        self.unet = UNet2DModel(               # package doesn't hard-require diffusers
+        channels = tuple(cfg.unet_block_channels)  # package doesn't hard-require diffusers
+        n = len(channels)
+        # Attention on the deepest (downsampled) stage + bottleneck, per Appendix B.
+        if cfg.unet_attention and n >= 2:
+            down_types = ("DownBlock2D",) * (n - 1) + ("AttnDownBlock2D",)
+            up_types = ("AttnUpBlock2D",) + ("UpBlock2D",) * (n - 1)
+        else:
+            down_types = ("DownBlock2D",) * n
+            up_types = ("UpBlock2D",) * n
+        self.unet = UNet2DModel(
             sample_size=image_size,
             in_channels=data_channels + cfg.z_channels,
             out_channels=data_channels,
             layers_per_block=cfg.unet_layers_per_block,
-            block_out_channels=(cfg.unet_width,),
-            down_block_types=("DownBlock2D",),
-            up_block_types=("UpBlock2D",),
+            block_out_channels=channels,
+            down_block_types=down_types,
+            up_block_types=up_types,
             norm_num_groups=cfg.unet_norm_groups,
         )
 
