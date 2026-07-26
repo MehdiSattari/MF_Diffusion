@@ -10,7 +10,7 @@
 #     source .venv/bin/activate && bash run_tests.sh
 set -euo pipefail
 cd "$(dirname "$0")"
-TESTS="test_unet test_encoder test_meanflow test_inference test_regression test_diffusion test_shared_diffusion test_seq2seq test_uncertainty"
+TESTS="test_unet test_encoder test_meanflow test_inference test_regression test_diffusion test_shared_diffusion test_seq2seq test_uncertainty test_ar_convlstm"
 fail=0
 for t in $TESTS; do
   echo "=== tests/$t ==="

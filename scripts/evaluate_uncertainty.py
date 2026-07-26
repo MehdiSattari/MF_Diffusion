@@ -28,10 +28,10 @@ import matplotlib.pyplot as plt
 from mf_csi.config import Config
 from mf_csi.data.sionna_cdl import CDLChannelGenerator
 from mf_csi.data.dataset import _normalize, _split_batch, estimate_global_minmax, denormalize
-from mf_csi.models import TemporalEncoder, UNetGenerator, JointRegressor
+from mf_csi.models import TemporalEncoder, UNetGenerator, ARConvLSTM
 from mf_csi.models.diu import DiUEncoder, DiUNet
 from mf_csi.diffusion import make_scheduler, ddim_ar_predict, corrupt_history
-from mf_csi.inference import autoregressive_predict, nmse, nmse_db
+from mf_csi.inference import autoregressive_predict, ar_convlstm_predict, nmse, nmse_db
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
                                 spectral_efficiency, outage_rate)
 
@@ -40,7 +40,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--mf-ckpt", type=str, default=None)
     p.add_argument("--diu-ckpt", type=str, default=None)
-    p.add_argument("--reg-ckpt", type=str, default=None)
+    p.add_argument("--convlstm-ckpt", type=str, default=None, help="AR ConvLSTM baseline")
     p.add_argument("--K", type=int, default=30, help="ensemble size (generative samples)")
     p.add_argument("--snr", type=float, default=20.0, help="inference SNR (history corruption)")
     p.add_argument("--n-samples", type=int, default=192)
@@ -156,17 +156,18 @@ def main():
                               else torch.stack(v).mean(0).tolist()) for k, v in agg.items()}
         print(f"[DiU] cov0.9 {results['DiU']['cov0.9']:.3f} | CRPS {np.mean(results['DiU']['crps']):.4f}")
 
-    # ---------------- Regressor (point baseline; NMSE + SE only) ----------------
-    if args.reg_ckpt:
-        ck = torch.load(args.reg_ckpt, map_location=device)
-        reg = JointRegressor(cfg.regression).to(device)
-        reg.load_state_dict(ck.get("ema", ck.get("model"))); reg.eval()
+    # ---------------- AR ConvLSTM (point baseline; AR inference) ----------------
+    if args.convlstm_ckpt:
+        ck = torch.load(args.convlstm_ckpt, map_location=device)
+        cl = ARConvLSTM(cfg.ar_convlstm).to(device)
+        cl.load_state_dict(ck.get("ema", ck.get("model"))); cl.eval()
         batches = to_batches(raw, cfg.data, "std", None)
         agg = {}
         for b in batches:
             past, future = b["past"].to(device), b["future"].to(device)
             hist = corrupt_history(past, args.snr, args.snr)
-            pred = denormalize(reg(hist), b["stats"]); y = denormalize(future, b["stats"])
+            pred = denormalize(ar_convlstm_predict(cl, hist, future.shape[1]), b["stats"])
+            y = denormalize(future, b["stats"])
             s = pred.unsqueeze(0)                              # K=1 degenerate ensemble (a point)
             accumulate(agg, "nmse", ensemble_mean_nmse(s, y)[0])   # now vs y (bug fixed)
             accumulate(agg, "se_pred", spectral_efficiency(pred, y, args.snr)[0])

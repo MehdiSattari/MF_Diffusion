@@ -37,9 +37,9 @@ from mf_csi.data.sionna_cdl import CDLChannelGenerator
 from mf_csi.data.dataset import _normalize, _split_batch, estimate_global_minmax, denormalize
 from mf_csi.models import TemporalEncoder, UNetGenerator
 from mf_csi.models.diu import DiUEncoder, DiUNet
-from mf_csi.models import JointRegressor
+from mf_csi.models import JointRegressor, ARConvLSTM
 from mf_csi.diffusion import make_scheduler, ddim_ar_predict, corrupt_history
-from mf_csi.inference import autoregressive_predict, mu_only_predict, nmse, nmse_db
+from mf_csi.inference import autoregressive_predict, mu_only_predict, ar_convlstm_predict, nmse, nmse_db
 
 
 # --------------------------------------------------------------------------- #
@@ -60,7 +60,9 @@ def parse_args():
     p.add_argument("--mf-mean-samples", type=int, default=None,
                    help="1-NFE draws averaged per MeanFlow frame (default: config)")
     p.add_argument("--reg-ckpt", type=str, default=None,
-                   help="JointRegressor (ConvLSTM) checkpoint; adds it as a baseline curve")
+                   help="JointRegressor (seq2seq ConvLSTM) checkpoint; adds it as a baseline curve")
+    p.add_argument("--convlstm-ckpt", type=str, default=None,
+                   help="AR ConvLSTM checkpoint; adds it as an AR baseline curve")
     return p.parse_args()
 
 
@@ -121,6 +123,15 @@ def load_regressor(ckpt_path, cfg, device, weights):
     key = "ema" if (weights == "ema" and "ema" in ck) else "model"
     model.load_state_dict(ck[key]); model.eval()
     print(f"[JointReg] {weights} weights | step {ck.get('step')} | best {ck.get('best_nmse_db')}")
+    return model
+
+
+def load_arconvlstm(ckpt_path, cfg, device, weights):
+    ck = torch.load(ckpt_path, map_location=device)
+    model = ARConvLSTM(cfg.ar_convlstm).to(device)
+    key = "ema" if (weights == "ema" and "ema" in ck) else "model"
+    model.load_state_dict(ck[key]); model.eval()
+    print(f"[ConvLSTM-AR] {weights} weights | step {ck.get('step')} | best {ck.get('best_nmse_db')}")
     return model
 
 
@@ -193,6 +204,18 @@ def jointreg_per_step(model, batches, cfg, device, snr, raw=False):
     return ps_sum / len(batches)
 
 
+@torch.no_grad()
+def arconvlstm_per_step(model, batches, cfg, device, snr, raw=False):
+    ps_sum = None
+    for b in batches:
+        past, future = b["past"].to(device), b["future"].to(device)
+        hist = past if snr is None else corrupt_history(past, snr, snr)
+        pred = ar_convlstm_predict(model, hist, future.shape[1])
+        ps = _nmse(pred, future, b["stats"], raw)
+        ps_sum = ps if ps_sum is None else ps_sum + ps
+    return ps_sum / len(batches)
+
+
 # --------------------------------------------------------------------------- #
 # Plot
 # --------------------------------------------------------------------------- #
@@ -227,6 +250,7 @@ def main():
     cfg.meanflow.source_std = sigma if sigma is not None else cfg.meanflow.source_std
     cfg.inference.seed_std = cfg.meanflow.source_std
     reg_model = load_regressor(args.reg_ckpt, cfg, device, args.weights) if args.reg_ckpt else None
+    arcl_model = load_arconvlstm(args.convlstm_ckpt, cfg, device, args.weights) if args.convlstm_ckpt else None
     scheduler = make_scheduler(cfg.diu)
 
     # The DiU checkpoint may predate global_ab being saved (None). Reproduce the
@@ -248,7 +272,8 @@ def main():
     conditions = ([(None, "clean")] if args.clean else []) + [(s, f"{s:g} dB") for s in snrs]
 
     palette = {"DiU": "#1f77b4", "MeanFlow": "#d62728",
-               "ConvLSTM-\u03bc (AR)": "#7f7f7f", "JointReg (ConvLSTM)": "#2ca02c"}
+               "ConvLSTM-\u03bc (AR)": "#7f7f7f", "JointReg (ConvLSTM)": "#2ca02c",
+               "ConvLSTM (AR)": "#9467bd"}
     styles = ["-", "--", "-.", ":"]
     # Physical (denormalized) space is the FAIR comparison -- both models mapped
     # back to the raw channel. Normalized-space numbers are kept for continuity.
@@ -269,6 +294,9 @@ def main():
             if reg_model is not None:
                 series.append(("JointReg (ConvLSTM)",
                                jointreg_per_step(reg_model, mf_batches, cfg, device, snr, raw=raw)))
+            if arcl_model is not None:
+                series.append(("ConvLSTM (AR)",
+                               arconvlstm_per_step(arcl_model, mf_batches, cfg, device, snr, raw=raw)))
             for name, ps in series:
                 db = [round(nmse_db(v).item(), 3) for v in ps]
                 avg_db = round(nmse_db(ps.mean()).item(), 3)

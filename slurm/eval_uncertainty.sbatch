@@ -22,7 +22,7 @@ K="${K:-30}"; SNR="${SNR:-20}"; STEP_NOISE="${STEP_NOISE:-0.0}"; EPS="${EPS:-0.1
 EXTRA=""
 [ -n "${MF:-}" ] && EXTRA="$EXTRA --mf-ckpt ${MF}"
 [ -n "${DIU:-}" ] && EXTRA="$EXTRA --diu-ckpt ${DIU}"
-[ -n "${REG:-}" ] && EXTRA="$EXTRA --reg-ckpt ${REG}"
+[ -n "${CONVLSTM:-}" ] && EXTRA="$EXTRA --convlstm-ckpt ${CONVLSTM}"
 
 ts=$(date +%y%m%d_%H%M); LOG="logs/uq_${ts}.txt"
 echo "===== UQ EVAL STARTED $(date) =====" | tee "$LOG"

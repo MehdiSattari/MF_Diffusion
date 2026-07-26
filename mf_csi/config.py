@@ -282,6 +282,26 @@ class RegressionConfig:
 
 
 @dataclass
+class ARConvLSTMConfig:
+    """Standalone autoregressive ConvLSTM baseline (the paper's ConvLSTM predictor).
+
+    ConvLSTM over the history -> a next-frame point estimate; rolled out one frame at
+    a time. This is the AR-inference discriminative reference for the AR comparisons
+    (MeanFlow / DiU), as opposed to the seq2seq JointRegressor. No output activation
+    (CSI is signed). Trained with MSE on the next frame."""
+    in_channels: int = 2
+    hidden_channels: int = 128
+    kernel_size: int = 3
+    num_layers: int = 1
+    dropout: float = 0.2
+    norm_groups: int = 1
+    final_activation: str = "none"       # "none" | "tanh"
+    noise_aug: bool = True
+    snr_db_min: float = -20.0
+    snr_db_max: float = 20.0
+
+
+@dataclass
 class Config:
     """Top-level container."""
     data: DataConfig = field(default_factory=DataConfig)
@@ -292,3 +312,4 @@ class Config:
     train: TrainConfig = field(default_factory=TrainConfig)
     diu: DiUConfig = field(default_factory=DiUConfig)
     regression: RegressionConfig = field(default_factory=RegressionConfig)
+    ar_convlstm: ARConvLSTMConfig = field(default_factory=ARConvLSTMConfig)

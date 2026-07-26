@@ -72,6 +72,21 @@ def autoregressive_predict(encoder, generator, past: torch.Tensor, num_future: i
 
 
 @torch.no_grad()
+def ar_convlstm_predict(model, past: torch.Tensor, num_future: int) -> torch.Tensor:
+    """Autoregressive rollout of a next-frame ConvLSTM -> [B, num_future, 2, Nt, Nc]."""
+    was = model.training
+    model.eval()
+    history = past
+    preds = []
+    for _ in range(num_future):
+        nxt = model(history)
+        preds.append(nxt)
+        history = torch.cat([history, nxt.unsqueeze(1)], dim=1)
+    model.train(was)
+    return torch.stack(preds, dim=1)
+
+
+@torch.no_grad()
 def mu_only_predict(encoder, past: torch.Tensor, num_future: int) -> torch.Tensor:
     """Autoregressive rollout using ONLY the encoder's point estimate mu (no flow).
 

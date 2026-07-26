@@ -3,6 +3,7 @@ from .encoder import TemporalEncoder
 from .unet import UNet, UNetGenerator, TimePairEmbedding
 from .diu import DiUEncoder, DiUNet
 from .regression import JointRegressor, ResBlock as RegResBlock
+from .ar_convlstm import ARConvLSTM
 
 __all__ = [
     "ConvLSTMCell",
@@ -14,4 +15,5 @@ __all__ = [
     "DiUEncoder",
     "DiUNet",
     "JointRegressor",
+    "ARConvLSTM",
 ]
