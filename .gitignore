@@ -8,19 +8,30 @@ __pycache__/
 venv/
 .venv/
 
-# SLURM / run artifacts
-logs/
+# SLURM / run artifacts.
+# Track the small python .txt logs (training/eval curves) so they sync via git and
+# can be read from the local clone -- never over the flaky sshfs mount. Ignore the
+# noisy slurm .out/.err.
+logs/**
+!logs/**/
+!logs/*.txt
 *.out
 *.err
 
-# Checkpoints / runs / generated data / visualizations
+# Checkpoints / runs / generated data / visualizations.
+# Keep the big stuff out of git (checkpoints, arrays), but TRACK the small result
+# artifacts (JSON metrics + PNG figures) under runs/ so results reach the local clone
+# through git instead of sshfs.
 checkpoints/
-runs/
 viz/
 *.ckpt
 *.pt
 *.npy
 *.npz
+runs/**
+!runs/**/
+!runs/**/*.json
+!runs/**/*.png
 
 # macOS metadata sidecars (created when the folder syncs from a Mac)
 ._*

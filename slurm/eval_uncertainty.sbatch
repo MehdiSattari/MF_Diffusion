@@ -24,7 +24,10 @@ EXTRA=""
 [ -n "${DIU:-}" ] && EXTRA="$EXTRA --diu-ckpt ${DIU}"
 [ -n "${CONVLSTM:-}" ] && EXTRA="$EXTRA --convlstm-ckpt ${CONVLSTM}"
 
-ts=$(date +%y%m%d_%H%M); LOG="logs/uq_${ts}.txt"
+ts=$(date +%y%m%d_%H%M)
+OUT="${OUT:-runs/uq_snr${SNR}_sn${STEP_NOISE}_${ts}}"
+mkdir -p "$OUT"
+LOG="logs/uq_${ts}.txt"
 echo "===== UQ EVAL STARTED $(date) =====" | tee "$LOG"
-python -m scripts.evaluate_uncertainty --K "$K" --snr "$SNR" --step-noise "$STEP_NOISE" --epsilon "$EPS" $EXTRA >> "$LOG" 2>&1
+python -m scripts.evaluate_uncertainty --K "$K" --snr "$SNR" --step-noise "$STEP_NOISE" --epsilon "$EPS" --out-dir "$OUT" $EXTRA >> "$LOG" 2>&1
 echo "===== FINISHED $(date) =====" | tee -a "$LOG"
