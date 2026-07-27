@@ -1,0 +1,7 @@
+===== JOB STARTED AT Mon Jun 29 17:21:02 CEST 2026 =====
+torch 2.5.1+cu121 | cuda.is_available: True | device: Tesla T4
+Sample shape [T,2,Nt,Nc]: (40, 2, 16, 16) | seq_len: 40
+[batch 0] past (8, 30, 2, 16, 16)  future (8, 10, 2, 16, 16)  norm=minmax  past[min,max]=[0.000,1.000]
+[batch 1] past (8, 30, 2, 16, 16)  future (8, 10, 2, 16, 16)  norm=minmax  past[min,max]=[0.000,1.000]
+OK: data pipeline smoke test passed.
+===== JOB FINISHED AT Mon Jun 29 17:21:32 CEST 2026 =====

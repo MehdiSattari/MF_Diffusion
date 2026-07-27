@@ -1,0 +1,8 @@
+===== SEQ2SEQ (diffusion/small) STARTED Sun Jul 26 13:22:32 CEST 2026 =====
+objective=diffusion size=small params=0.698M steps=300 batch=256 lr=0.0002 norm=global_std
+global-std (mu, sd) = (0.0308, 0.7064)
+step      0 | loss 0.0140 | lr 2.00e-07 | 1.0 it/s
+step    100 | loss 0.0132 | lr 2.02e-05 | 1.2 it/s
+step    200 | loss 0.0125 | lr 4.02e-05 | 1.2 it/s
+done. best avg NMSE inf dB. checkpoints in runs/s2s_diffusion_small_6916026
+===== FINISHED Sun Jul 26 13:27:21 CEST 2026 =====

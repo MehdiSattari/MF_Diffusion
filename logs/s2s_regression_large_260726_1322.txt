@@ -1,0 +1,8 @@
+===== SEQ2SEQ (regression/large) STARTED Sun Jul 26 13:22:32 CEST 2026 =====
+objective=regression size=large params=1.362M steps=300 batch=256 lr=0.0002 norm=global_std
+global-std (mu, sd) = (0.0275, 0.7066)
+step      0 | loss 1.1634 | lr 2.00e-07 | 0.3 it/s
+step    100 | loss 0.9955 | lr 2.02e-05 | 0.5 it/s
+step    200 | loss 0.7734 | lr 4.02e-05 | 0.5 it/s
+done. best avg NMSE inf dB. checkpoints in runs/s2s_regression_large_6916027
+===== FINISHED Sun Jul 26 13:33:24 CEST 2026 =====

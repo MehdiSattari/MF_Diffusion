@@ -1,0 +1,233 @@
+{
+  "steps": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "note": "physical = denormalized (fair, cross-model); normalized = each model's own training space",
+  "series": [
+    {
+      "model": "DiU",
+      "space": "physical",
+      "condition": "clean",
+      "nmse_db": [
+        -22.046,
+        -17.696,
+        -14.188,
+        -11.347,
+        -9.048,
+        -7.177,
+        -5.638,
+        -4.34,
+        -3.215,
+        -2.217
+      ],
+      "avg_nmse_db": -6.637
+    },
+    {
+      "model": "MeanFlow",
+      "space": "physical",
+      "condition": "clean",
+      "nmse_db": [
+        -18.687,
+        -17.198,
+        -15.079,
+        -12.798,
+        -10.65,
+        -8.758,
+        -7.128,
+        -5.723,
+        -4.512,
+        -3.469
+      ],
+      "avg_nmse_db": -7.957
+    },
+    {
+      "model": "MeanFlow-mu",
+      "space": "physical",
+      "condition": "clean",
+      "nmse_db": [
+        -24.384,
+        -20.153,
+        -16.403,
+        -13.17,
+        -10.415,
+        -8.037,
+        -5.933,
+        -4.035,
+        -2.302,
+        -0.717
+      ],
+      "avg_nmse_db": -6.164
+    },
+    {
+      "model": "DiU",
+      "space": "normalized",
+      "condition": "clean",
+      "nmse_db": [
+        -22.022,
+        -17.687,
+        -14.198,
+        -11.375,
+        -9.09,
+        -7.223,
+        -5.678,
+        -4.371,
+        -3.237,
+        -2.234
+      ],
+      "avg_nmse_db": -6.665
+    },
+    {
+      "model": "MeanFlow",
+      "space": "normalized",
+      "condition": "clean",
+      "nmse_db": [
+        -18.147,
+        -16.741,
+        -14.768,
+        -12.534,
+        -10.427,
+        -8.566,
+        -6.935,
+        -5.548,
+        -4.359,
+        -3.346
+      ],
+      "avg_nmse_db": -7.783
+    },
+    {
+      "model": "MeanFlow-mu",
+      "space": "normalized",
+      "condition": "clean",
+      "nmse_db": [
+        -24.145,
+        -19.952,
+        -16.226,
+        -13.008,
+        -10.263,
+        -7.893,
+        -5.798,
+        -3.91,
+        -2.187,
+        -0.612
+      ],
+      "avg_nmse_db": -6.043
+    },
+    {
+      "model": "DiU",
+      "space": "physical",
+      "condition": "20 dB",
+      "nmse_db": [
+        -19.915,
+        -16.559,
+        -13.622,
+        -11.15,
+        -9.113,
+        -7.439,
+        -6.051,
+        -4.872,
+        -3.842,
+        -2.921
+      ],
+      "avg_nmse_db": -7.094
+    },
+    {
+      "model": "MeanFlow",
+      "space": "physical",
+      "condition": "20 dB",
+      "nmse_db": [
+        -18.017,
+        -16.573,
+        -14.719,
+        -12.813,
+        -10.974,
+        -9.345,
+        -7.897,
+        -6.615,
+        -5.46,
+        -4.431
+      ],
+      "avg_nmse_db": -8.712
+    },
+    {
+      "model": "MeanFlow-mu",
+      "space": "physical",
+      "condition": "20 dB",
+      "nmse_db": [
+        -20.803,
+        -17.881,
+        -15.153,
+        -12.752,
+        -10.693,
+        -8.929,
+        -7.372,
+        -5.92,
+        -4.493,
+        -3.06
+      ],
+      "avg_nmse_db": -7.931
+    },
+    {
+      "model": "DiU",
+      "space": "normalized",
+      "condition": "20 dB",
+      "nmse_db": [
+        -19.883,
+        -16.554,
+        -13.647,
+        -11.203,
+        -9.183,
+        -7.516,
+        -6.126,
+        -4.94,
+        -3.901,
+        -2.973
+      ],
+      "avg_nmse_db": -7.155
+    },
+    {
+      "model": "MeanFlow",
+      "space": "normalized",
+      "condition": "20 dB",
+      "nmse_db": [
+        -17.515,
+        -16.112,
+        -14.342,
+        -12.482,
+        -10.703,
+        -9.1,
+        -7.683,
+        -6.427,
+        -5.292,
+        -4.295
+      ],
+      "avg_nmse_db": -8.51
+    },
+    {
+      "model": "MeanFlow-mu",
+      "space": "normalized",
+      "condition": "20 dB",
+      "nmse_db": [
+        -20.431,
+        -17.553,
+        -14.872,
+        -12.513,
+        -10.49,
+        -8.756,
+        -7.225,
+        -5.798,
+        -4.395,
+        -2.983
+      ],
+      "avg_nmse_db": -7.807
+    }
+  ]
+}

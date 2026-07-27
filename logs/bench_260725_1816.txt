@@ -1,0 +1,26 @@
+===== BENCHMARK STARTED AT Sat Jul 25 18:16:11 CEST 2026 =====
+device=cuda (NVIDIA A40) | Np=30 Nf=10 grid=16x16 | batch=64 repeats=30
+
+==================== PARAMETERS ====================
+MeanFlow  | enc  0.750M | gen  1.459M | total  2.209M (8.4 MB fp32)
+DiU       | enc  0.602M | gen  0.220M | total  0.822M (3.1 MB fp32)
+
+============ PER-HORIZON COMPUTE (Nf frames) ============
+MeanFlow  | enc evals  10 | gen/unet evals  10 | FLOPs 108.36 GFLOPs
+DiU       | enc evals  10 | gen/unet evals 200 | FLOPs 124.79 GFLOPs
+
+=========== LATENCY & MEMORY (device=cuda) ===========
+DiU benchmarked at 20 NFE/frame; MeanFlow at 1 draw/frame
+MeanFlow  | B=1  125.58+-0.36 ms | B=64   387.58+-0.74 ms |    165/s | peak 142 MB
+DiU       | B=1  826.44+-20.14 ms | B=64  1170.91+-1.31 ms |     55/s | peak 134 MB
+
+=========== DiU NFE SWEEP (latency Pareto) ===========
+   1 NFE/frame ( 10 evals) | B=64   400.01 ms | FLOPs 106.77 GFLOPs
+   2 NFE/frame ( 20 evals) | B=64   440.57 ms | FLOPs 107.72 GFLOPs
+   3 NFE/frame ( 30 evals) | B=64   481.54 ms | FLOPs 108.67 GFLOPs
+   5 NFE/frame ( 50 evals) | B=64   563.05 ms | FLOPs 110.57 GFLOPs
+  10 NFE/frame (100 evals) | B=64   766.45 ms | FLOPs 115.31 GFLOPs
+  20 NFE/frame (200 evals) | B=64  1172.55 ms | FLOPs 124.79 GFLOPs
+
+saved: runs/bench/efficiency.json
+===== BENCHMARK FINISHED AT Sat Jul 25 18:19:28 CEST 2026 =====

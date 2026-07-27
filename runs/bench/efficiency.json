@@ -1,0 +1,119 @@
+{
+  "device": "NVIDIA A40",
+  "batch": 64,
+  "Np": 30,
+  "Nf": 10,
+  "params": {
+    "MeanFlow": {
+      "encoder": 749698,
+      "generator": 1458850,
+      "total": 2208548,
+      "size_MB_fp32": 8.424942016601562
+    },
+    "DiU": {
+      "encoder": 601858,
+      "generator": 220194,
+      "total": 822052,
+      "size_MB_fp32": 3.1358795166015625
+    }
+  },
+  "nfe_per_horizon": {
+    "MeanFlow": {
+      "encoder_evals": 10,
+      "generator_evals": 10
+    },
+    "DiU": {
+      "encoder_evals": 10,
+      "unet_evals": 200
+    }
+  },
+  "flops_horizon": {
+    "MeanFlow": 108360171520,
+    "DiU": 124792340480
+  },
+  "latency_memory": {
+    "MeanFlow": {
+      "latency_ms_b1": [
+        125.5817068585505,
+        0.35661522294762066
+      ],
+      "latency_ms_bB": [
+        387.5775660776223,
+        0.7355055672169095
+      ],
+      "throughput_sps_bB": 165.12823651713208,
+      "peak_mem_MB_bB": 141.61572265625
+    },
+    "DiU": {
+      "latency_ms_b1": [
+        826.4377621545767,
+        20.13601963948031
+      ],
+      "latency_ms_bB": [
+        1170.9097498018916,
+        1.312941418477613
+      ],
+      "throughput_sps_bB": 54.658354335872836,
+      "peak_mem_MB_bB": 133.61572265625
+    }
+  },
+  "diu_nfe_sweep": [
+    {
+      "nfe_per_frame": 1,
+      "unet_evals": 10,
+      "latency_ms_bB": [
+        400.00831722281873,
+        0.26884136081716287
+      ],
+      "flops_horizon": 106774528000
+    },
+    {
+      "nfe_per_frame": 2,
+      "unet_evals": 20,
+      "latency_ms_bB": [
+        440.5694379160802,
+        0.15657783982742715
+      ],
+      "flops_horizon": 107722833920
+    },
+    {
+      "nfe_per_frame": 3,
+      "unet_evals": 30,
+      "latency_ms_bB": [
+        481.5425379977872,
+        0.30327466747120563
+      ],
+      "flops_horizon": 108671139840
+    },
+    {
+      "nfe_per_frame": 5,
+      "unet_evals": 50,
+      "latency_ms_bB": [
+        563.0480335870137,
+        0.2553115512181191
+      ],
+      "flops_horizon": 110567751680
+    },
+    {
+      "nfe_per_frame": 10,
+      "unet_evals": 100,
+      "latency_ms_bB": [
+        766.4464818468938,
+        0.29539618288835545
+      ],
+      "flops_horizon": 115309281280
+    },
+    {
+      "nfe_per_frame": 20,
+      "unet_evals": 200,
+      "latency_ms_bB": [
+        1172.5451925303787,
+        0.578765023235185
+      ],
+      "flops_horizon": 124792340480
+    }
+  ],
+  "cpu_latency": null,
+  "diu_main_nfe": 20,
+  "mf_samples": 1
+}

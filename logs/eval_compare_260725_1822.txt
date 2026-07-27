@@ -1,0 +1,24 @@
+===== EVAL COMPARE STARTED AT Sat Jul 25 18:22:38 CEST 2026 =====
+DIU=runs/diu_6793522/ckpt_best.pt  MF=runs/mf_6913678/ckpt_best.pt  SNRS=20  NSAMPLES=256
+$HOME/MF_CSI_Prediction/scripts/evaluate_compare.py:91: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(ckpt_path, map_location=device)
+$HOME/MF_CSI_Prediction/scripts/evaluate_compare.py:103: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(ckpt_path, map_location=device)
+[DiU]      ema weights | step 56000 | best -9.714580535888672 | global_ab None
+[MeanFlow] ema weights | step 48000 | best -8.258923530578613 | source_std 1.0
+DiU checkpoint has no global_ab; estimating global min-max ...
+estimated global (a, b) = (-3.3728, 3.6266)
+generating shared eval set: 256 samples ...
+
+=== per-step NMSE (dB) ===  [physical space = fair comparison]
+  DiU          ( clean) | step1  -22.05 | step10   -2.22 | avg   -6.64
+  MeanFlow     ( clean) | step1  -18.69 | step10   -3.47 | avg   -7.96
+  MeanFlow-mu  ( clean) | step1  -24.38 | step10   -0.72 | avg   -6.16
+  DiU          ( 20 dB) | step1  -19.91 | step10   -2.92 | avg   -7.09
+  MeanFlow     ( 20 dB) | step1  -18.02 | step10   -4.43 | avg   -8.71
+  MeanFlow-mu  ( 20 dB) | step1  -20.80 | step10   -3.06 | avg   -7.93
+
+saved: runs/compare/nmse_vs_step_compare.png
+       runs/compare/nmse_vs_step_compare_norm.png
+       runs/compare/nmse_vs_step_compare.json
+===== EVAL COMPARE FINISHED AT Sat Jul 25 18:23:48 CEST 2026 =====

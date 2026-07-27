@@ -1,0 +1,99 @@
+===== DIFFUSION TRAIN STARTED AT Sun Jul 26 11:46:11 CEST 2026 =====
+device=cuda out_dir=runs/diu_6915912 steps=80000 batch=128 lr=0.0002
+estimating global min-max ...
+global norm (a, b) = (-3.3748, 3.6710)
+building fixed validation set ...
+step      0 | huber 0.0047 | lr 2.00e-07 | 0.4 it/s
+step    100 | huber 0.0037 | lr 2.02e-05 | 2.2 it/s
+step    200 | huber 0.0024 | lr 4.02e-05 | 2.3 it/s
+step    300 | huber 0.0020 | lr 6.02e-05 | 2.3 it/s
+step    400 | huber 0.0019 | lr 8.02e-05 | 2.3 it/s
+step    500 | huber 0.0018 | lr 1.00e-04 | 2.3 it/s
+step    600 | huber 0.0016 | lr 1.20e-04 | 2.3 it/s
+step    700 | huber 0.0015 | lr 1.40e-04 | 2.3 it/s
+step    800 | huber 0.0015 | lr 1.60e-04 | 2.3 it/s
+step    900 | huber 0.0014 | lr 1.80e-04 | 2.3 it/s
+step   1000 | huber 0.0014 | lr 2.00e-04 | 2.3 it/s
+step   1100 | huber 0.0014 | lr 2.00e-04 | 2.3 it/s
+step   1200 | huber 0.0014 | lr 2.00e-04 | 2.3 it/s
+step   1300 | huber 0.0014 | lr 2.00e-04 | 2.3 it/s
+step   1400 | huber 0.0013 | lr 2.00e-04 | 2.3 it/s
+step   1500 | huber 0.0012 | lr 2.00e-04 | 2.3 it/s
+step   1600 | huber 0.0013 | lr 2.00e-04 | 2.3 it/s
+step   1700 | huber 0.0012 | lr 2.00e-04 | 2.3 it/s
+step   1800 | huber 0.0011 | lr 2.00e-04 | 2.3 it/s
+step   1900 | huber 0.0012 | lr 2.00e-04 | 2.3 it/s
+step   2000 | huber 0.0011 | lr 2.00e-04 | 2.3 it/s
+  [eval] step 2000 | EMA avg NMSE -1.15 dB (step1 -7.61, step10 1.53)
+step   2100 | huber 0.0011 | lr 2.00e-04 | 2.3 it/s
+step   2200 | huber 0.0011 | lr 2.00e-04 | 2.3 it/s
+step   2300 | huber 0.0011 | lr 2.00e-04 | 2.3 it/s
+step   2400 | huber 0.0011 | lr 2.00e-04 | 2.3 it/s
+step   2500 | huber 0.0010 | lr 2.00e-04 | 2.3 it/s
+step   2600 | huber 0.0010 | lr 2.00e-04 | 2.3 it/s
+step   2700 | huber 0.0009 | lr 2.00e-04 | 2.3 it/s
+step   2800 | huber 0.0010 | lr 2.00e-04 | 2.3 it/s
+step   2900 | huber 0.0009 | lr 2.00e-04 | 2.3 it/s
+step   3000 | huber 0.0009 | lr 2.00e-04 | 2.3 it/s
+step   3100 | huber 0.0009 | lr 2.00e-04 | 2.3 it/s
+step   3200 | huber 0.0009 | lr 2.00e-04 | 2.3 it/s
+step   3300 | huber 0.0009 | lr 2.00e-04 | 2.3 it/s
+step   3400 | huber 0.0009 | lr 2.00e-04 | 2.3 it/s
+step   3500 | huber 0.0010 | lr 2.00e-04 | 2.3 it/s
+step   3600 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+step   3700 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+step   3800 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+step   3900 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   4000 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+  [eval] step 4000 | EMA avg NMSE -3.26 dB (step1 -10.78, step10 -0.39)
+step   4100 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+step   4200 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   4300 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   4400 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+step   4500 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   4600 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+step   4700 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   4800 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   4900 | huber 0.0009 | lr 1.99e-04 | 2.3 it/s
+step   5000 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   5100 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   5200 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   5300 | huber 0.0008 | lr 1.99e-04 | 2.3 it/s
+step   5400 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   5500 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   5600 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   5700 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   5800 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   5900 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   6000 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+  [eval] step 6000 | EMA avg NMSE -4.13 dB (step1 -12.24, step10 -0.96)
+step   6100 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   6200 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   6300 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   6400 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   6500 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   6600 | huber 0.0008 | lr 1.98e-04 | 2.3 it/s
+step   6700 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   6800 | huber 0.0009 | lr 1.97e-04 | 2.3 it/s
+step   6900 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7000 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7100 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7200 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7300 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7400 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7500 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7600 | huber 0.0007 | lr 1.97e-04 | 2.3 it/s
+step   7700 | huber 0.0008 | lr 1.97e-04 | 2.3 it/s
+step   7800 | huber 0.0008 | lr 1.96e-04 | 2.3 it/s
+step   7900 | huber 0.0008 | lr 1.96e-04 | 2.3 it/s
+step   8000 | huber 0.0008 | lr 1.96e-04 | 2.3 it/s
+  [eval] step 8000 | EMA avg NMSE -4.70 dB (step1 -13.41, step10 -1.39)
+step   8100 | huber 0.0008 | lr 1.96e-04 | 2.3 it/s
+step   8200 | huber 0.0008 | lr 1.96e-04 | 2.3 it/s
+step   8300 | huber 0.0007 | lr 1.96e-04 | 2.3 it/s
+step   8400 | huber 0.0008 | lr 1.96e-04 | 2.3 it/s
+step   8500 | huber 0.0007 | lr 1.96e-04 | 2.3 it/s
+step   8600 | huber 0.0008 | lr 1.96e-04 | 2.3 it/s
+step   8700 | huber 0.0008 | lr 1.95e-04 | 2.3 it/s
+step   8800 | huber 0.0008 | lr 1.95e-04 | 2.3 it/s
+step   8900 | huber 0.0008 | lr 1.95e-04 | 2.3 it/s
