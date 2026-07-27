@@ -1,16 +1,17 @@
-"""Diffusion objective on the SHARED UNetGenerator backbone.
+"""Diffusion objective on the SHARED UNetGenerator backbone, with an optional
+informative (mu) prior -- the symmetric analogue of MeanFlow's informative prior.
 
-For the controlled MeanFlow-vs-diffusion comparison, DiU and MeanFlow must use the
-*same* temporal encoder and the *same* generator backbone, differing only in the
-training objective and sampling. This module implements the diffusion path on the
-shared `UNetGenerator` (the exact network MeanFlow uses), so the only variables are:
+For the controlled 2x2 mu-ablation, DiU and MeanFlow use the SAME temporal encoder
+and the SAME UNetGenerator; only the objective + sampling + the mu switch differ.
 
-    MeanFlow : predict average velocity u(h, z, r, t), 1-NFE sampling
-    Diffusion: predict clean x0 from a noised frame, multi-step DDIM sampling
+  use_mu = False : standard predict-x0 diffusion (source ~ N(0, I)).
+  use_mu = True  : RESIDUAL diffusion -- the network models (x0 - mu) around the
+                   encoder's point estimate mu (residual-diffusion / ResShift-style),
+                   with an auxiliary MSE(mu, Y). At sampling, x0 = mu + residual.
+                   This mirrors MeanFlow centering its source on mu, so the mu switch
+                   means the same thing for both objectives.
 
-Both call `UNetGenerator(h, z, r, t)`; diffusion simply passes the (normalized)
-diffusion timestep as r = t. Everything else -- encoder, backbone weights budget,
-normalization, optimizer, EMA, data, AR inference -- is identical.
+Diffusion passes the (normalized) timestep as r = t to the shared UNetGenerator.
 """
 
 from __future__ import annotations
@@ -18,41 +19,53 @@ from __future__ import annotations
 from typing import Dict, Tuple
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .config import DiUConfig
 from .diffusion import make_scheduler, corrupt_history
 
 
 def _tn(t: torch.Tensor, num_train_timesteps: int) -> torch.Tensor:
-    """Normalize an integer diffusion timestep to [0, 1] for the time embedding."""
     return t.float() / float(num_train_timesteps)
 
 
 def diffusion_loss_shared(encoder, generator, scheduler, history, target,
                           cfg: DiUConfig, huber: nn.Module,
-                          snr_min: float = -20.0, snr_max: float = 20.0
+                          snr_min: float = -20.0, snr_max: float = 20.0,
+                          use_mu: bool = False, mu_weight: float = 1.0
                           ) -> Tuple[torch.Tensor, Dict]:
-    """Predict-x0 diffusion loss on the shared UNetGenerator.
+    """Predict-x0 (or predict-residual, if use_mu) diffusion loss on the shared U-Net.
 
-    history: [B, T, 2, Nt, Nc] conditioning window; target: [B, 2, Nt, Nc] clean next frame.
+    history: [B, T, 2, Nt, Nc]; target: [B, 2, Nt, Nc] clean next frame.
     """
     device = target.device
     B = target.shape[0]
     hist = corrupt_history(history, snr_min, snr_max)
-    z = encoder(hist)                                        # [B, Cz, Nt, Nc]
+    z, mu = encoder(hist, return_mu=True)
     x0 = target
-    noise = torch.randn_like(x0)
+    if use_mu and mu is not None:
+        base = mu.detach()
+        diff_target = x0 - base                       # model the residual around mu
+    else:
+        diff_target = x0
+    noise = torch.randn_like(diff_target)
     t = torch.randint(0, cfg.num_train_timesteps, (B,), device=device, dtype=torch.long)
-    x_t = scheduler.add_noise(x0, noise, t)
-    tn = _tn(t, cfg.num_train_timesteps)                     # [B] in [0,1]
-    pred_x0 = generator(x_t, z, tn, tn)                      # r = t (diffusion has one time)
-    loss = huber(pred_x0, x0)
-    return loss, {"loss": loss.detach()}
+    x_t = scheduler.add_noise(diff_target, noise, t)
+    tn = _tn(t, cfg.num_train_timesteps)
+    pred = generator(x_t, z, tn, tn)                  # predict clean (residual or x0)
+    flow_loss = huber(pred, diff_target)
+    if use_mu and mu is not None:
+        aux = F.mse_loss(mu, x0)                      # train mu toward E[Y|history]
+        loss = flow_loss + mu_weight * aux
+    else:
+        aux = torch.zeros((), device=device)
+        loss = flow_loss
+    return loss, {"loss": loss.detach(), "flow": flow_loss.detach(), "aux": aux.detach()}
 
 
 @torch.no_grad()
-def ddim_sample_next_shared(encoder, generator, scheduler, z, cfg: DiUConfig,
-                            data_channels: int = 2):
+def ddim_sample_next_shared(generator, scheduler, z, cfg: DiUConfig,
+                            mu=None, use_mu: bool = False, data_channels: int = 2):
     B, _, Nt, Nc = z.shape
     device = z.device
     scheduler.set_timesteps(cfg.sampling_steps, device=device)
@@ -62,22 +75,26 @@ def ddim_sample_next_shared(encoder, generator, scheduler, z, cfg: DiUConfig,
         x = torch.randn(B, data_channels, Nt, Nc, device=device)
     for t in scheduler.timesteps:
         tn = _tn(t, cfg.num_train_timesteps).expand(B).to(device)
-        pred_x0 = generator(x, z, tn, tn)
-        x = scheduler.step(pred_x0, t, x, eta=cfg.ddim_eta).prev_sample
+        pred = generator(x, z, tn, tn)
+        x = scheduler.step(pred, t, x, eta=cfg.ddim_eta).prev_sample
+    if use_mu and mu is not None:
+        x = x + mu                                    # reconstruct x0 = mu + residual
     return x
 
 
 @torch.no_grad()
 def ddim_ar_predict_shared(encoder, generator, scheduler, past, num_future,
-                           cfg: DiUConfig, data_channels: int = 2) -> torch.Tensor:
+                           cfg: DiUConfig, use_mu: bool = False, data_channels: int = 2) -> torch.Tensor:
     """Autoregressive DDIM rollout on the shared backbone -> [B, num_future, 2, Nt, Nc]."""
     was = (encoder.training, generator.training)
     encoder.eval(); generator.eval()
     history = past
     preds = []
     for _ in range(num_future):
-        z = encoder(history)
-        nxt = ddim_sample_next_shared(encoder, generator, scheduler, z, cfg, data_channels)
+        z, mu = encoder(history, return_mu=True)
+        nxt = ddim_sample_next_shared(generator, scheduler, z, cfg,
+                                      mu=(mu if use_mu else None), use_mu=use_mu,
+                                      data_channels=data_channels)
         preds.append(nxt)
         history = torch.cat([history, nxt.unsqueeze(1)], dim=1)
     encoder.train(was[0]); generator.train(was[1])
