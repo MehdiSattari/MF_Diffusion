@@ -1,0 +1,16 @@
+===== UQ 2x2 STARTED Tue Jul 28 13:10:52 CEST 2026 =====
+$HOME/MF_CSI_Prediction/scripts/evaluate_uncertainty_2x2.py:84: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(ckpt, map_location=device)
+$HOME/MF_CSI_Prediction/scripts/evaluate_uncertainty_2x2.py:157: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(args.convlstm, map_location=device)
+shared eval set: 192 | K=30 | SNR=5.0 | diff_steps=3
+[MeanFlow+mu] NMSE -9.80 dB | cov0.9 0.587 | goodput@10% 4.51
+[MeanFlow-mu] NMSE -7.13 dB | cov0.9 0.487 | goodput@10% 3.75
+[Diffusion+mu] NMSE -9.97 dB | cov0.9 0.309 | goodput@10% 4.51
+[Diffusion-mu] NMSE -5.49 dB | cov0.9 0.186 | goodput@10% 4.67
+[ConvLSTM] NMSE -8.66 dB (point)
+
+saved nmse.png, reliability.png, outage.png, uncertainty_2x2.json to runs/uq2x2_snr5_260728_1310/
+10/
+===== FINISHED Tue Jul 28 13:14:26 CEST 2026 =====
+===== FINISHED Tue Jul 28 13:14:26 CEST 2026 =====
