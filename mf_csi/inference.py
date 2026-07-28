@@ -51,7 +51,7 @@ def predict_next_frame(generator, z: torch.Tensor, mu: Optional[torch.Tensor] = 
 @torch.no_grad()
 def autoregressive_predict(encoder, generator, past: torch.Tensor, num_future: int,
                            seed_std: float = 1.0, step_noise_std: float = 0.0,
-                           num_samples: int = 1) -> torch.Tensor:
+                           num_samples: int = 1, use_mu: bool = True) -> torch.Tensor:
     """Roll out `num_future` frames autoregressively.
 
     past: [B, Np, 2, Nt, Nc] -> returns [B, num_future, 2, Nt, Nc].
@@ -64,7 +64,8 @@ def autoregressive_predict(encoder, generator, past: torch.Tensor, num_future: i
     preds = []
     for _ in range(num_future):
         z, mu = encoder(history, return_mu=True)
-        nxt = predict_next_frame(generator, z, mu, seed_std, step_noise_std, num_samples)
+        nxt = predict_next_frame(generator, z, (mu if use_mu else None),
+                                 seed_std, step_noise_std, num_samples)
         preds.append(nxt)
         history = torch.cat([history, nxt.unsqueeze(1)], dim=1)
     encoder.train(was_training[0]); generator.train(was_training[1])
