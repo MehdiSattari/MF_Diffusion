@@ -34,7 +34,7 @@ from mf_csi.diffusion import make_scheduler, corrupt_history
 from mf_csi.diffusion_shared import ddim_ar_predict_shared
 from mf_csi.inference import autoregressive_predict, ar_convlstm_predict, nmse, nmse_db
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
-                                spectral_efficiency, outage_rate)
+                                spectral_efficiency, outage_operating_curve, goodput_at_outage)
 
 LEVELS = [0.1, 0.3, 0.5, 0.7, 0.9]
 # name -> (color, is_point)
@@ -96,8 +96,8 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
         y = denormalize(future, b["stats"])
         agg.setdefault("nmse", []).append(ensemble_mean_nmse(s, y)[0])
         agg.setdefault("se_pred", []).append(spectral_efficiency(s.mean(0), y, snr)[0])
-        g_o, o_o = outage_rate(s, y, snr, args.epsilon)
-        agg.setdefault("goodput", []).append(g_o); agg.setdefault("outage", []).append(o_o)
+        oc_o, oc_g = outage_operating_curve(s, y, snr)
+        agg.setdefault("oc_outage", []).append(oc_o); agg.setdefault("oc_goodput", []).append(oc_g)
         for lv in LEVELS:
             agg.setdefault(f"cov{lv}", []).append(coverage(s, y, lv)[1].item())
         if not is_point:
@@ -107,6 +107,9 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
     out = {}
     for k, v in agg.items():
         out[k] = float(np.mean(v)) if k.startswith("cov") else torch.stack(v).mean(0).tolist()
+    if "oc_outage" in out:
+        out["goodput_at_eps"] = goodput_at_outage(torch.tensor(out["oc_outage"]),
+                                                  torch.tensor(out["oc_goodput"]), args.epsilon)
     return out
 
 
@@ -134,7 +137,7 @@ def main():
                                 num_samples=1, use_mu=use_mu) for _ in range(args.K)], dim=0)
         results[name] = metrics_for(sfn, batches, device, args.snr, args)
         print(f"[{name}] NMSE {nmse_db(torch.tensor(results[name]['nmse']).mean()).item():.2f} dB "
-              f"| cov0.9 {results[name]['cov0.9']:.3f} | outage {np.mean(results[name]['outage']):.3f}")
+              f"| cov0.9 {results[name]['cov0.9']:.3f} | goodput@{args.epsilon:.0%} {results[name]['goodput_at_eps']:.2f}")
 
     def add_diffusion(name, ckpt, use_mu):
         if not ckpt: return
@@ -144,7 +147,7 @@ def main():
                                 use_mu=use_mu) for _ in range(args.K)], dim=0)
         results[name] = metrics_for(sfn, batches, device, args.snr, args)
         print(f"[{name}] NMSE {nmse_db(torch.tensor(results[name]['nmse']).mean()).item():.2f} dB "
-              f"| cov0.9 {results[name]['cov0.9']:.3f} | outage {np.mean(results[name]['outage']):.3f}")
+              f"| cov0.9 {results[name]['cov0.9']:.3f} | goodput@{args.epsilon:.0%} {results[name]['goodput_at_eps']:.2f}")
 
     add_meanflow("MeanFlow+mu", args.mf_mu, True)
     add_meanflow("MeanFlow-mu", args.mf_nomu, False)
@@ -175,17 +178,16 @@ def main():
     ax.set_xlabel("nominal"); ax.set_ylabel("empirical"); ax.set_title("Reliability")
     ax.grid(True, alpha=0.3); ax.legend(fontsize=8); fig.tight_layout()
     fig.savefig(os.path.join(args.out_dir, "reliability.png"), dpi=150); plt.close(fig)
-    # (3) outage goodput
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.2, 3.8))
+    # (3) goodput-vs-outage OPERATING CURVE (bias-robust)
+    fig, ax = plt.subplots(figsize=(5.6, 4.2))
     for name, r in results.items():
-        if "goodput" in r:
-            a1.plot(steps, r["goodput"], marker="o", color=STYLE[name][0], label=name)
-            a2.plot(steps, r["outage"], marker="o", color=STYLE[name][0], label=name)
-    a2.axhline(args.epsilon, color="k", ls="--", lw=1, label=f"target {args.epsilon:g}")
-    a1.set_title(f"Goodput @ {args.epsilon:g}-outage"); a1.set_ylabel("b/s/Hz")
-    a2.set_title("Empirical outage"); a2.set_ylabel("outage")
-    for a in (a1, a2): a.set_xlabel("prediction step"); a.grid(True, alpha=0.3); a.legend(fontsize=7)
-    fig.tight_layout(); fig.savefig(os.path.join(args.out_dir, "outage.png"), dpi=150); plt.close(fig)
+        if "oc_outage" in r:
+            ax.plot(r["oc_outage"], r["oc_goodput"], marker="o", ms=3, color=STYLE[name][0], label=name)
+    ax.axvline(args.epsilon, color="k", ls="--", lw=1, label=f"target outage {args.epsilon:g}")
+    ax.set_xlabel("achieved outage"); ax.set_ylabel("goodput (b/s/Hz)")
+    ax.set_title("Rate-adaptation operating curve (up-left is better)")
+    ax.grid(True, alpha=0.3); ax.legend(fontsize=8); fig.tight_layout()
+    fig.savefig(os.path.join(args.out_dir, "operating_curve.png"), dpi=150); plt.close(fig)
 
     with open(os.path.join(args.out_dir, "uncertainty_2x2.json"), "w") as f:
         json.dump(results, f, indent=2)

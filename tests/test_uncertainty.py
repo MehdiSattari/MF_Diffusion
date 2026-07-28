@@ -10,7 +10,8 @@ Run:  python -m tests.test_uncertainty
 import torch
 
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
-                                spectral_efficiency, outage_rate)
+                                spectral_efficiency, outage_rate,
+                                outage_operating_curve, goodput_at_outage)
 
 
 def test_calibrated_ensemble():
@@ -48,6 +49,22 @@ def test_spectral_efficiency_bound():
     print(f"OK SE | pred {se_pred.mean().item():.3f} <= perfect {se_perfect.mean().item():.3f} b/s/Hz")
 
 
+def test_operating_curve_not_gameable():
+    """A model that UNDER-predicts the channel must not win goodput at equal outage:
+    the operating curve penalises conservative bias (the flaw in the single-point metric)."""
+    torch.manual_seed(0)
+    B, Nf, Nt, Nc, K = 48, 10, 16, 16, 60
+    true = torch.randn(B, Nf, 2, Nt, Nc)
+    good = true.unsqueeze(0) + 0.3 * torch.randn(K, B, Nf, 2, Nt, Nc)   # accurate ensemble
+    biased = 0.5 * good                                                 # systematically under-predicts
+    og, gg = outage_operating_curve(good, true, 20.0)
+    ob, gb = outage_operating_curve(biased, true, 20.0)
+    g_good = goodput_at_outage(og, gg, 0.1)
+    g_biased = goodput_at_outage(ob, gb, 0.1)
+    assert g_good > g_biased, f"under-predictor should not win goodput@outage ({g_biased:.2f} vs {g_good:.2f})"
+    print(f"OK operating curve | goodput@0.1: accurate {g_good:.2f} > under-predictor {g_biased:.2f}")
+
+
 def test_outage_calibration():
     torch.manual_seed(0)
     B, Nf, Nt, Nc, K = 64, 10, 16, 16, 200
@@ -67,4 +84,5 @@ if __name__ == "__main__":
     test_calibrated_ensemble()
     test_spectral_efficiency_bound()
     test_outage_calibration()
+    test_operating_curve_not_gameable()
     print("\nUncertainty/downstream metric tests passed.")

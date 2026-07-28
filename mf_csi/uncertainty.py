@@ -108,6 +108,45 @@ def outage_rate(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0,
     return goodput, outage
 
 
+def outage_operating_curve(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0,
+                           q_grid: "torch.Tensor | None" = None
+                           ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Goodput-vs-outage operating curve (bias-robust replacement for a single outage point).
+
+    For each target quantile q, the transmitter selects rate R_q = q-quantile of the
+    predicted achievable-rate distribution, and we measure the ACHIEVED outage and
+    goodput on the true channel. Sweeping q traces the whole trade-off, so a model that
+    merely under-predicts the channel (low outage by conservatism) cannot look good --
+    it can only buy low outage with low goodput. The fair comparison is the curve, and
+    the goodput at the point where achieved outage = target epsilon.
+
+    samples [K,B,Nf,2,Nt,Nc], true [B,Nf,2,Nt,Nc] -> (achieved_outage [Q], goodput [Q]).
+    """
+    if q_grid is None:
+        q_grid = torch.linspace(0.02, 0.6, 30)
+    snr = 10.0 ** (snr_db / 10.0)
+    hp = _to_complex(samples)                                   # [K,B,Nf,Nt,Nc]
+    ht = _to_complex(true)                                      # [B,Nf,Nt,Nc]
+    c_pred = torch.log2(1.0 + snr * (hp.abs() ** 2).sum(dim=3)) # [K,B,Nf,Nc]
+    c_true = torch.log2(1.0 + snr * (ht.abs() ** 2).sum(dim=2)) # [B,Nf,Nc]
+    q_grid = q_grid.to(c_pred.device, c_pred.dtype)
+    R = torch.quantile(c_pred, q_grid, dim=0)                   # [Q,B,Nf,Nc]
+    success = (c_true.unsqueeze(0) >= R).float()
+    achieved_outage = (1.0 - success).mean(dim=(1, 2, 3))       # [Q]
+    goodput = (R * success).mean(dim=(1, 2, 3))                 # [Q]
+    return achieved_outage, goodput
+
+
+def goodput_at_outage(achieved_outage: torch.Tensor, goodput: torch.Tensor,
+                      epsilon: float = 0.1) -> float:
+    """Interpolate the operating curve to the goodput where achieved outage = epsilon.
+    The single fair scalar: throughput each model can guarantee at the target reliability."""
+    o = achieved_outage.detach().cpu().numpy()
+    g = goodput.detach().cpu().numpy()
+    order = o.argsort()
+    return float(__import__("numpy").interp(epsilon, o[order], g[order]))
+
+
 def spectral_efficiency(pred: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0
                         ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Downstream MR-precoding spectral efficiency (bits/s/Hz), per prediction step.
