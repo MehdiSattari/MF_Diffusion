@@ -54,6 +54,8 @@ def parse_args():
     p.add_argument("--K", type=int, default=30)
     p.add_argument("--snr", type=float, default=20.0)
     p.add_argument("--diff-steps", type=int, default=3)
+    p.add_argument("--ddim-eta", type=float, default=1.0,
+                   help="DDIM stochasticity: 1.0=stochastic (default, for UQ), 0.0=deterministic (best NMSE).")
     p.add_argument("--step-noise", type=float, default=0.05)
     p.add_argument("--epsilon", type=float, default=0.1)
     p.add_argument("--n-samples", type=int, default=192)
@@ -132,12 +134,14 @@ def main():
     args = parse_args()
     cfg = Config()
     cfg.diu.sampling_steps = args.diff_steps
-    cfg.diu.deterministic_init = False; cfg.diu.ddim_eta = 1.0      # stochastic -> ensemble
+    cfg.diu.deterministic_init = False; cfg.diu.ddim_eta = args.ddim_eta  # eta=1 stochastic (UQ), eta=0 deterministic (best NMSE)
+    # random init keeps an ensemble even at eta=0, so coverage still reports the calibration cost
     cfg.inference.seed_std = cfg.meanflow.source_std
     scheduler = make_scheduler(cfg.diu)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.makedirs(args.out_dir, exist_ok=True)
-    print(f"shared eval set: {args.n_samples} | K={args.K} | SNR={args.snr} | diff_steps={args.diff_steps}")
+    _mode = "deterministic" if args.ddim_eta == 0.0 else "stochastic"
+    print(f"shared eval set: {args.n_samples} | K={args.K} | SNR={args.snr} | diff_steps={args.diff_steps} | ddim_eta={args.ddim_eta} ({_mode})")
     raw = raw_batches(cfg.data, args.n_samples, args.batch_size)
     batches = to_batches(raw, cfg.data)
 
