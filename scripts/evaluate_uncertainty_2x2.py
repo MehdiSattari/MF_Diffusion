@@ -61,7 +61,23 @@ def parse_args():
     p.add_argument("--n-samples", type=int, default=192)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--out-dir", type=str, default="runs/uq2x2")
+    p.add_argument("--seed", type=int, default=0,
+                   help="Seed TF/torch/numpy so eta=0 vs eta=1 runs are paired (identical channels).")
     return p.parse_args()
+
+
+def set_all_seeds(seed: int):
+    """Seed TF (Sionna channel realizations), torch (sampling), and numpy so two eval
+    runs are PAIRED: identical channels + identical sampling draws on shared code paths.
+    Any remaining difference between an eta=0 and eta=1 run is then purely the DDIM knob."""
+    import random as _r
+    _r.seed(seed); np.random.seed(seed)
+    torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
+    try:
+        import tensorflow as tf
+        tf.random.set_seed(seed)          # Sionna CDL draws its channels from TF's global RNG
+    except Exception as e:
+        print(f"[seed] TF seed skipped: {e}")
 
 
 def raw_batches(cfg, n, bs):
@@ -133,6 +149,8 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
 def main():
     args = parse_args()
     cfg = Config()
+    cfg.data.seed = args.seed
+    set_all_seeds(args.seed)               # PAIR the runs: identical channels + sampling draws
     cfg.diu.sampling_steps = args.diff_steps
     cfg.diu.deterministic_init = False; cfg.diu.ddim_eta = args.ddim_eta  # eta=1 stochastic (UQ), eta=0 deterministic (best NMSE)
     # random init keeps an ensemble even at eta=0, so coverage still reports the calibration cost
@@ -141,7 +159,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.makedirs(args.out_dir, exist_ok=True)
     _mode = "deterministic" if args.ddim_eta == 0.0 else "stochastic"
-    print(f"shared eval set: {args.n_samples} | K={args.K} | SNR={args.snr} | diff_steps={args.diff_steps} | ddim_eta={args.ddim_eta} ({_mode})")
+    print(f"shared eval set: {args.n_samples} | K={args.K} | SNR={args.snr} | diff_steps={args.diff_steps} | ddim_eta={args.ddim_eta} ({_mode}) | seed={args.seed}")
     raw = raw_batches(cfg.data, args.n_samples, args.batch_size)
     batches = to_batches(raw, cfg.data)
 
