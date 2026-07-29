@@ -1,0 +1,18 @@
+===== UQ 2x2 STARTED Wed Jul 29 11:53:04 CEST 2026 =====
+$HOME/MF_CSI_Prediction/scripts/evaluate_uncertainty_2x2.py:85: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(ckpt, map_location=device)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "$HOME/MF_CSI_Prediction/scripts/evaluate_uncertainty_2x2.py", line 234, in <module>
+    main()
+  File "$HOME/MF_CSI_Prediction/scripts/evaluate_uncertainty_2x2.py", line 167, in main
+    add_meanflow("MeanFlow+mu", args.mf_mu, True)
+  File "$HOME/MF_CSI_Prediction/scripts/evaluate_uncertainty_2x2.py", line 153, in add_meanflow
+    results[name] = metrics_for(sfn, batches, device, args.snr, args)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$HOME/MF_CSI_Prediction/scripts/evaluate_uncertainty_2x2.py", line 124, in metrics_for
+    out["R_cdf"] = torch.quantile(Rflat, qs).tolist()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: quantile() q tensor must be on the same device as the input tensor
+shared eval set: 192 | K=30 | SNR=20.0 | diff_steps=3
