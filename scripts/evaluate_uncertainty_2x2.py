@@ -34,7 +34,8 @@ from mf_csi.diffusion import make_scheduler, corrupt_history
 from mf_csi.diffusion_shared import ddim_ar_predict_shared
 from mf_csi.inference import autoregressive_predict, ar_convlstm_predict, nmse, nmse_db
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
-                                spectral_efficiency, outage_operating_curve, goodput_at_outage)
+                                spectral_efficiency, outage_operating_curve, goodput_at_outage,
+                                outage_global, selected_rates, crps_rate)
 
 LEVELS = [0.1, 0.3, 0.5, 0.7, 0.9]
 # name -> (color, is_point)
@@ -98,18 +99,32 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
         agg.setdefault("se_pred", []).append(spectral_efficiency(s.mean(0), y, snr)[0])
         oc_o, oc_g = outage_operating_curve(s, y, snr)
         agg.setdefault("oc_outage", []).append(oc_o); agg.setdefault("oc_goodput", []).append(oc_g)
+        R_i, ct = selected_rates(s, y, snr, args.epsilon)
+        agg.setdefault("_R", []).append(R_i); agg.setdefault("_ct", []).append(ct)
+        gR, gO, gG = outage_global(s, y, snr, args.epsilon)
+        agg.setdefault("_gR", []).append(gR); agg.setdefault("_gO", []).append(gO); agg.setdefault("_gG", []).append(gG)
         for lv in LEVELS:
             agg.setdefault(f"cov{lv}", []).append(coverage(s, y, lv)[1].item())
+        agg.setdefault("crps_rate", []).append(crps_rate(s, y, snr)[0])
         if not is_point:
             agg.setdefault("crps", []).append(crps(s, y)[0])
             agg.setdefault("spread", []).append(spread_skill(s, y)[0])
             agg.setdefault("skill", []).append(spread_skill(s, y)[1])
+    Rflat = torch.cat(agg.pop("_R")); ctflat = torch.cat(agg.pop("_ct"))
+    gR = float(np.mean(agg.pop("_gR"))); gO = float(np.mean(agg.pop("_gO"))); gG = float(np.mean(agg.pop("_gG")))
     out = {}
     for k, v in agg.items():
         out[k] = float(np.mean(v)) if k.startswith("cov") else torch.stack(v).mean(0).tolist()
     if "oc_outage" in out:
         out["goodput_at_eps"] = goodput_at_outage(torch.tensor(out["oc_outage"]),
                                                   torch.tensor(out["oc_goodput"]), args.epsilon)
+    # rate diagnostics
+    qs = torch.linspace(0.0, 1.0, 101)
+    out["R_mean"] = float(Rflat.mean()); out["R_std"] = float(Rflat.std())
+    out["R_cdf"] = torch.quantile(Rflat, qs).tolist()
+    out["ctrue_cdf"] = torch.quantile(ctflat, qs).tolist()
+    out["cdf_p"] = qs.tolist()
+    out["global_goodput"] = gG; out["global_outage"] = gO; out["global_R"] = gR
     return out
 
 
@@ -188,6 +203,27 @@ def main():
     ax.set_title("Rate-adaptation operating curve (up-left is better)")
     ax.grid(True, alpha=0.3); ax.legend(fontsize=8); fig.tight_layout()
     fig.savefig(os.path.join(args.out_dir, "operating_curve.png"), dpi=150); plt.close(fig)
+
+    # (4) rate CDF diagnostic: are some models simply selecting more aggressive rates?
+    fig, ax = plt.subplots(figsize=(5.6, 4.2))
+    ct_ref = None
+    for name, r in results.items():
+        if "R_cdf" in r:
+            ax.plot(r["R_cdf"], r["cdf_p"], color=STYLE[name][0], lw=2, label=name)
+            ct_ref = r["ctrue_cdf"]; p_ref = r["cdf_p"]
+    if ct_ref is not None:
+        ax.plot(ct_ref, p_ref, color="black", lw=1.5, ls="--", label="true rate")
+    ax.set_xlabel("selected rate $R_i$ (bits/s/Hz)"); ax.set_ylabel("CDF")
+    ax.set_title(f"Selected per-coefficient rate at q={args.epsilon:g}")
+    ax.grid(True, alpha=0.3); ax.legend(fontsize=8); fig.tight_layout()
+    fig.savefig(os.path.join(args.out_dir, "rate_cdf.png"), dpi=150); plt.close(fig)
+
+    print("\n=== rate diagnostics (aggression vs variance) & Case-1 global goodput ===")
+    for name, r in results.items():
+        if "R_mean" in r:
+            print(f"  {name:13s} | R_i mean {r['R_mean']:.2f} std {r['R_std']:.2f} "
+                  f"| Case2 goodput@eps {r.get('goodput_at_eps', float('nan')):.2f} "
+                  f"| Case1 goodput {r['global_goodput']:.2f} | CRPS-rate {float(np.mean(r['crps_rate'])):.3f}")
 
     with open(os.path.join(args.out_dir, "uncertainty_2x2.json"), "w") as f:
         json.dump(results, f, indent=2)

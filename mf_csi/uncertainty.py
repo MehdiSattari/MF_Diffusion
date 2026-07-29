@@ -67,8 +67,9 @@ def coverage(samples: torch.Tensor, y: torch.Tensor, level: float = 0.9
 
 
 def spread_skill(samples: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Per-step ensemble spread (mean std over K) and skill (RMSE of the ensemble mean).
-    A calibrated ensemble has spread ~ skill. Returns (spread [Nf], skill [Nf])."""
+    """Per-step ensemble spread (RMS std over K) and skill (RMSE of the ensemble mean).
+    A calibrated ensemble has spread/skill ~ sqrt(K/(K+1)) (=> ~0.98 for K=30, i.e. ~1);
+    a ratio well below 1 means over-confident. Returns (spread [Nf], skill [Nf])."""
     mean = samples.mean(dim=0)
     var = samples.var(dim=0, unbiased=True)                      # [B,Nf,2,Nt,Nc]
     spread = _reduce_steps(var).sqrt()
@@ -108,18 +109,73 @@ def outage_rate(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0,
     return goodput, outage
 
 
+def rate_quantities(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0):
+    """Achievable MR rates. Returns (c_pred [K,B,Nf,Nc], c_true [B,Nf,Nc])."""
+    snr = 10.0 ** (snr_db / 10.0)
+    hp = _to_complex(samples); ht = _to_complex(true)
+    c_pred = torch.log2(1.0 + snr * (hp.abs() ** 2).sum(dim=3))
+    c_true = torch.log2(1.0 + snr * (ht.abs() ** 2).sum(dim=2))
+    return c_pred, c_true
+
+
+def outage_global(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0,
+                  epsilon: float = 0.1) -> Tuple[float, float, float]:
+    """Case 1 (single GLOBAL rate). R = epsilon-quantile of the model's pooled predicted
+    rate distribution; then achieved outage = P(c_true < R), goodput = R*(1-achieved).
+    A biased/high-variance model cannot allocate an aggregate outage budget unevenly here."""
+    c_pred, c_true = rate_quantities(samples, true, snr_db)
+    R = torch.quantile(c_pred.reshape(-1), epsilon)
+    achieved = (c_true < R).float().mean()
+    goodput = R * (1.0 - achieved)
+    return float(R), float(achieved), float(goodput)
+
+
+def selected_rates(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0,
+                   epsilon: float = 0.1):
+    """Per-coefficient selected rate R_i (epsilon-quantile over samples) + c_true, flattened,
+    for diagnosing whether a model is aggressive (R shifted high) or high-variance (R spread)."""
+    c_pred, c_true = rate_quantities(samples, true, snr_db)
+    R = torch.quantile(c_pred, epsilon, dim=0)              # [B,Nf,Nc]
+    return R.reshape(-1), c_true.reshape(-1)
+
+
+def crps_rate(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0
+              ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """CRPS of the achievable MR rate -- a PROPER, un-gameable downstream score that ties
+    uncertainty quality to communications performance (as suggested in review).
+
+    For each coefficient the model induces a distribution of achievable rates
+    C_k = log2(1 + snr * ||h_pred_k||^2); we score it against the true achievable rate
+    C_true = log2(1 + snr * ||h_true||^2) with CRPS = E|C-C_true| - 1/2 E|C-C'|. Lower is
+    better. Unlike goodput, no aggregate-outage budget can be spent unevenly, and unlike
+    NMSE it rewards predicting the *distribution* of rate, not just the mean.
+
+    samples [K,B,Nf,2,Nt,Nc], true [B,Nf,2,Nt,Nc] -> (per_step [Nf], overall).
+    """
+    c_pred, c_true = rate_quantities(samples, true, snr_db)      # [K,B,Nf,Nc], [B,Nf,Nc]
+    K = c_pred.shape[0]
+    term1 = (c_pred - c_true.unsqueeze(0)).abs().mean(dim=0)     # E|C - C_true|  [B,Nf,Nc]
+    xs, _ = torch.sort(c_pred, dim=0)
+    k = torch.arange(1, K + 1, device=c_pred.device, dtype=c_pred.dtype)
+    w = (2.0 * k - K - 1.0).view(K, 1, 1, 1)
+    exx = (2.0 / (K * K)) * (w * xs).sum(dim=0)                  # E|C - C'|      [B,Nf,Nc]
+    crps_c = term1 - 0.5 * exx
+    per_step = crps_c.mean(dim=(0, 2))                           # [Nf]
+    return per_step, per_step.mean()
+
+
 def outage_operating_curve(samples: torch.Tensor, true: torch.Tensor, snr_db: float = 20.0,
                            q_grid: "torch.Tensor | None" = None
                            ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Goodput-vs-outage operating curve (bias-robust replacement for a single outage point).
+    """Goodput-vs-outage operating curve. NOTE: this is the *per-coefficient* rate with
+    *aggregate* outage (a distinct R per (b,f,subcarrier), outage averaged over all).
+    This definition is NOT bias-robust: a high-variance / optimistically-biased model can
+    raise average goodput by spending an aggregate outage budget unevenly across
+    coefficients. Use `outage_global` (single global rate) for a bias-robust scalar, and
+    the calibration scores (coverage, CRPS, spread-skill) for the reliable verdict.
 
-    For each target quantile q, the transmitter selects rate R_q = q-quantile of the
-    predicted achievable-rate distribution, and we measure the ACHIEVED outage and
-    goodput on the true channel. Sweeping q traces the whole trade-off, so a model that
-    merely under-predicts the channel (low outage by conservatism) cannot look good --
-    it can only buy low outage with low goodput. The fair comparison is the curve, and
-    the goodput at the point where achieved outage = target epsilon.
-
+    For each target quantile q, R_q = q-quantile of the predicted achievable-rate
+    distribution; achieved outage and goodput are measured on the true channel.
     samples [K,B,Nf,2,Nt,Nc], true [B,Nf,2,Nt,Nc] -> (achieved_outage [Q], goodput [Q]).
     """
     if q_grid is None:

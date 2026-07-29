@@ -11,7 +11,7 @@ import torch
 
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
                                 spectral_efficiency, outage_rate,
-                                outage_operating_curve, goodput_at_outage)
+                                outage_operating_curve, goodput_at_outage, crps_rate)
 
 
 def test_calibrated_ensemble():
@@ -65,6 +65,21 @@ def test_operating_curve_not_gameable():
     print(f"OK operating curve | goodput@0.1: accurate {g_good:.2f} > under-predictor {g_biased:.2f}")
 
 
+def test_crps_rate():
+    """CRPS of achievable rate: a well-centered rate ensemble must score lower than a
+    biased/wide one (proper score, un-gameable)."""
+    torch.manual_seed(0)
+    B, Nf, Nt, Nc, K = 32, 10, 16, 16, 40
+    true = torch.randn(B, Nf, 2, Nt, Nc)
+    good = true.unsqueeze(0) + 0.2 * torch.randn(K, B, Nf, 2, Nt, Nc)
+    biased = 1.6 * good                                          # over-predicts gain (wide/biased rate)
+    _, cg = crps_rate(good, true, 20.0)
+    _, cb = crps_rate(biased, true, 20.0)
+    assert cg.shape == () and torch.isfinite(cg) and cg > 0
+    assert cg < cb, f"accurate rate ensemble should score lower CRPS-rate ({cg:.3f} vs {cb:.3f})"
+    print(f"OK CRPS-rate | accurate {cg:.3f} < biased {cb:.3f}")
+
+
 def test_outage_calibration():
     torch.manual_seed(0)
     B, Nf, Nt, Nc, K = 64, 10, 16, 16, 200
@@ -85,4 +100,5 @@ if __name__ == "__main__":
     test_spectral_efficiency_bound()
     test_outage_calibration()
     test_operating_curve_not_gameable()
+    test_crps_rate()
     print("\nUncertainty/downstream metric tests passed.")
