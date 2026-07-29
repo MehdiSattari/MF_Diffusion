@@ -26,6 +26,8 @@ EXTRA=""
 [ -n "${DIFF_MU:-}" ] && EXTRA="$EXTRA --diff-mu ${DIFF_MU}"
 [ -n "${DIFF_NOMU:-}" ] && EXTRA="$EXTRA --diff-nomu ${DIFF_NOMU}"
 [ -n "${CONVLSTM:-}" ] && EXTRA="$EXTRA --convlstm ${CONVLSTM}"
+[ -n "${SAVE_BATCHES:-}" ] && EXTRA="$EXTRA --save-batches ${SAVE_BATCHES}"
+[ -n "${LOAD_BATCHES:-}" ] && EXTRA="$EXTRA --load-batches ${LOAD_BATCHES}"
 echo "===== UQ 2x2 STARTED $(date) =====" | tee "$LOG"
 python -m scripts.evaluate_uncertainty_2x2 --K "$K" --snr "$SNR" --diff-steps "$DIFF_STEPS" \
     --ddim-eta "$ETA" --seed "$SEED" --step-noise "$SN" --out-dir "$OUT" $EXTRA >> "$LOG" 2>&1

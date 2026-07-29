@@ -63,6 +63,10 @@ def parse_args():
     p.add_argument("--out-dir", type=str, default="runs/uq2x2")
     p.add_argument("--seed", type=int, default=0,
                    help="Seed TF/torch/numpy so eta=0 vs eta=1 runs are paired (identical channels).")
+    p.add_argument("--save-batches", type=str, default=None,
+                   help="Generate the eval channels, save them here, then evaluate. Use for the FIRST run.")
+    p.add_argument("--load-batches", type=str, default=None,
+                   help="Load pre-generated eval channels (byte-identical to the first run). Use for the SECOND run.")
     return p.parse_args()
 
 
@@ -160,8 +164,16 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     _mode = "deterministic" if args.ddim_eta == 0.0 else "stochastic"
     print(f"shared eval set: {args.n_samples} | K={args.K} | SNR={args.snr} | diff_steps={args.diff_steps} | ddim_eta={args.ddim_eta} ({_mode}) | seed={args.seed}")
-    raw = raw_batches(cfg.data, args.n_samples, args.batch_size)
-    batches = to_batches(raw, cfg.data)
+    if args.load_batches:
+        batches = torch.load(args.load_batches, map_location="cpu")
+        print(f"loaded {len(batches)} pre-generated eval batches from {args.load_batches} "
+              f"(byte-identical channels -> truly paired run)")
+    else:
+        raw = raw_batches(cfg.data, args.n_samples, args.batch_size)
+        batches = to_batches(raw, cfg.data)
+        if args.save_batches:
+            torch.save(batches, args.save_batches)
+            print(f"saved {len(batches)} eval batches to {args.save_batches} for the paired second run")
 
     results = {}
 
