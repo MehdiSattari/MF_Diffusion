@@ -119,7 +119,7 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
         out["goodput_at_eps"] = goodput_at_outage(torch.tensor(out["oc_outage"]),
                                                   torch.tensor(out["oc_goodput"]), args.epsilon)
     # rate diagnostics
-    qs = torch.linspace(0.0, 1.0, 101)
+    qs = torch.linspace(0.0, 1.0, 101, device=Rflat.device)
     out["R_mean"] = float(Rflat.mean()); out["R_std"] = float(Rflat.std())
     out["R_cdf"] = torch.quantile(Rflat, qs).tolist()
     out["ctrue_cdf"] = torch.quantile(ctflat, qs).tolist()
