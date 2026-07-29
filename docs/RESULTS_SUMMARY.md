@@ -160,6 +160,50 @@ forecast.
 
 ---
 
+## 7. Resolved downstream picture — 2×2 μ-ablation (CRPS-rate + global-rate goodput)  ✅ reliable
+
+The unconfounded downstream evaluation on the shared-backbone 2×2 (identical encoder,
+backbone, normalization, training; MeanFlow 1 NFE, diffusion 3 NFE). Physical space,
+20 dB, K=30. Rate `c = log₂(1 + SNR·Σₐ|h|²)`; **CRPS-rate** scores the whole predicted
+rate distribution (proper, un-gameable); goodput selects a rate at 10% target outage.
+
+| Model | NMSE | cov@90 | **CRPS-rate ↓** | global goodput (Case 1) | per-coef. goodput (Case 2) | rate std |
+|---|---|---|---|---|---|---|
+| **MeanFlow+μ** | −9.82 | 0.71 | **0.163** | **9.73** | 8.74 | 0.39 |
+| Diffusion+μ | −10.61 | 0.19 | 0.172 | 9.60 | 6.48 | 0.40 |
+| ConvLSTM | −8.55 | — | 0.207 | 8.94 | 4.42 | 0.35 |
+| MeanFlow−μ | −6.29 | 0.54 | 0.311 | 8.12 | 4.40 | 0.38 |
+| Diffusion−μ | −4.35 | 0.10 | **0.739** | 9.45 | *9.44* | 0.48 |
+
+**The Diffusion−μ goodput anomaly is resolved — it was a metric artifact, not a real gain.**
+
+1. **It's variance, not bias.** Diffusion−μ has the *lowest* mean selected rate (9.83,
+   most conservative) but the *highest* spread (std 0.48). Under a per-coefficient rate +
+   **aggregate** outage rule (Case 2), that spread lets it allocate the outage budget
+   unevenly and spuriously report the highest goodput (9.44) — despite the worst NMSE and
+   calibration by a wide margin.
+2. **A single global rate removes the artifact (Case 1).** Ordering becomes sensible:
+   MeanFlow+μ 9.73 > Diffusion+μ 9.60 > Diffusion−μ 9.45 > ConvLSTM 8.94 > MeanFlow−μ 8.12.
+   Diffusion−μ drops from "best" to mid-pack.
+3. **CRPS-rate (proper score) ranks it correctly last** (0.739, 4.5× worse than
+   MeanFlow+μ's 0.163) — consistent with its NMSE/calibration, opposite to its gamed goodput.
+
+**Why even Case-1 goodput discriminates weakly at 20 dB (don't over-read 9.45 ≈ 9.73):**
+the rate is `log₂` of antenna-**summed** power (element errors partially cancel, then the
+log compresses residual error), goodput deliberately picks a conservative 10% quantile
+(a lower R buys back reliability along a nearly flat trade-off), and the true rate is
+**saturated** near the 10.6 b/s/Hz ceiling. Same saturation that flattened spectral
+efficiency. → **Report CRPS-rate as the primary downstream metric**; use goodput only to
+confirm the outage constraint is met, and read it at **low SNR (5–10 dB)** if an
+operational throughput number that actually separates the models is needed.
+
+**Also confirmed (honest caveat):** the channel-level calibration gap (coverage 0.73 vs
+0.18) is *larger* than the rate-level CRPS gap (0.163 vs 0.172), because the maximum-ratio
+rate aggregates over antennas and blunts per-element mis-calibration — diffusion+μ's good
+mean keeps its rate prediction competitive despite poor per-element calibration.
+
+---
+
 ## Bottom line so far
 
 1. **Regression owns NMSE** at these horizons/SNR (its optimum is the conditional
@@ -172,6 +216,9 @@ forecast.
    the weak DiU did not, but that comparison is confounded.
 4. **MeanFlow's compute advantage is modest** (~1.2–1.5×) once diffusion runs at its
    3-step operating point.
+5. **Downstream, calibration carries over:** MeanFlow+μ has the best CRPS-rate; the
+   Diffusion−μ "best goodput" was a per-coefficient-variance artifact that a single
+   global rate removes. CRPS-rate is the metric to report; goodput saturates at 20 dB.
 
 The 2×2 ablation + a wide-posterior evaluation will settle whether the honest framing
 is "informative-prior MeanFlow: comparable accuracy, slightly cheaper, better-
