@@ -75,6 +75,29 @@ def calibration_error(samples: torch.Tensor, y: torch.Tensor,
     return sum(errs) / len(errs)
 
 
+def rank_counts(samples: torch.Tensor, y: torch.Tensor, n_bins: int = 10):
+    """PIT / verification-rank histogram bin counts (unnormalized) for one batch.
+
+    For each scalar coefficient, the rank r = #{ensemble members < truth} / K in [0,1]
+    is binned into `n_bins`. A calibrated ensemble gives a FLAT histogram; an
+    overconfident (under-dispersed) one gives a U-shape (mass piling at the ends).
+    Returns a length-`n_bins` tensor of counts; sum across batches, then normalize."""
+    K = samples.shape[0]
+    r = (samples < y.unsqueeze(0)).sum(dim=0).float() / K       # [B,Nf,2,Nt,Nc], in [0,1]
+    idx = (r.clamp(0.0, 1.0 - 1e-6) * n_bins).long().clamp(0, n_bins - 1)
+    return torch.bincount(idx.flatten(), minlength=n_bins).float()
+
+
+def rank_uniformity(hist_norm) -> float:
+    """Scalar summary of a normalized rank histogram: total-variation distance from
+    uniform, sum_b |h_b - 1/n_bins|. 0 == perfectly flat (calibrated); larger == more
+    U-shaped (overconfident)."""
+    import torch as _t
+    h = _t.as_tensor(hist_norm, dtype=_t.float32)
+    n = h.numel()
+    return float((h - 1.0 / n).abs().sum())
+
+
 def spread_skill(samples: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """Per-step ensemble spread (RMS std over K) and skill (RMSE of the ensemble mean).
     A calibrated ensemble has spread/skill ~ sqrt(K/(K+1)) (=> ~0.98 for K=30, i.e. ~1);

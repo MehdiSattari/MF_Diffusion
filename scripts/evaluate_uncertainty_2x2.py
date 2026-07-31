@@ -35,7 +35,9 @@ from mf_csi.diffusion_shared import ddim_ar_predict_shared
 from mf_csi.inference import autoregressive_predict, ar_convlstm_predict, nmse, nmse_db
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
                                 spectral_efficiency, outage_operating_curve, goodput_at_outage,
-                                outage_global, selected_rates, crps_rate)
+                                outage_global, selected_rates, crps_rate, rank_counts, rank_uniformity)
+
+RANK_BINS = 10
 
 LEVELS = [0.1, 0.3, 0.5, 0.7, 0.9]
 # name -> (color, is_point)
@@ -132,8 +134,13 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
             agg.setdefault("crps", []).append(crps(s, y)[0])
             agg.setdefault("spread", []).append(spread_skill(s, y)[0])
             agg.setdefault("skill", []).append(spread_skill(s, y)[1])
+            agg.setdefault("_rank", []).append(rank_counts(s, y, RANK_BINS).cpu())
     Rflat = torch.cat(agg.pop("_R")); ctflat = torch.cat(agg.pop("_ct"))
     gR = float(np.mean(agg.pop("_gR"))); gO = float(np.mean(agg.pop("_gO"))); gG = float(np.mean(agg.pop("_gG")))
+    rank_hist = None
+    if "_rank" in agg:
+        h = torch.stack(agg.pop("_rank")).sum(0); h = h / h.sum()
+        rank_hist = h.tolist()
     out = {}
     for k, v in agg.items():
         out[k] = float(np.mean(v)) if k.startswith("cov") else torch.stack(v).mean(0).tolist()
@@ -149,6 +156,9 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
     out["global_goodput"] = gG; out["global_outage"] = gO; out["global_R"] = gR
     if all(f"cov{lv}" in out for lv in LEVELS):
         out["ecal"] = float(np.mean([abs(out[f"cov{lv}"] - lv) for lv in LEVELS]))
+    if rank_hist is not None:
+        out["rank_hist"] = rank_hist
+        out["rank_uniformity"] = rank_uniformity(rank_hist)
     return out
 
 
@@ -260,7 +270,7 @@ def main():
             print(f"  {name:13s} | R_i mean {r['R_mean']:.2f} std {r['R_std']:.2f} "
                   f"| Case2 goodput@eps {r.get('goodput_at_eps', float('nan')):.2f} "
                   f"| Case1 goodput {r['global_goodput']:.2f} | CRPS-rate {float(np.mean(r['crps_rate'])):.3f} "
-                  f"| ECal {r.get('ecal', float('nan')):.3f}")
+                  f"| ECal {r.get('ecal', float('nan')):.3f} | rankU {r.get('rank_uniformity', float('nan')):.3f}")
 
     with open(os.path.join(args.out_dir, "uncertainty_2x2.json"), "w") as f:
         json.dump(results, f, indent=2)
