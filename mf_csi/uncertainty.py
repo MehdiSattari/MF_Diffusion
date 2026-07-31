@@ -66,6 +66,15 @@ def coverage(samples: torch.Tensor, y: torch.Tensor, level: float = 0.9
     return per_step, per_step.mean()
 
 
+def calibration_error(samples: torch.Tensor, y: torch.Tensor,
+                      levels=(0.1, 0.3, 0.5, 0.7, 0.9)) -> float:
+    """ECE-style interval calibration error: mean over nominal `levels` of
+    |empirical_coverage(level) - level|. Lower is better; 0 == perfectly calibrated.
+    Complements the reliability diagram with a single scalar."""
+    errs = [abs(float(coverage(samples, y, lv)[1]) - lv) for lv in levels]
+    return sum(errs) / len(errs)
+
+
 def spread_skill(samples: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """Per-step ensemble spread (RMS std over K) and skill (RMSE of the ensemble mean).
     A calibrated ensemble has spread/skill ~ sqrt(K/(K+1)) (=> ~0.98 for K=30, i.e. ~1);

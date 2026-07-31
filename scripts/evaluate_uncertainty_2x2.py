@@ -147,6 +147,8 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
     out["ctrue_cdf"] = torch.quantile(ctflat, qs).tolist()
     out["cdf_p"] = qs.tolist()
     out["global_goodput"] = gG; out["global_outage"] = gO; out["global_R"] = gR
+    if all(f"cov{lv}" in out for lv in LEVELS):
+        out["ecal"] = float(np.mean([abs(out[f"cov{lv}"] - lv) for lv in LEVELS]))
     return out
 
 
@@ -257,7 +259,8 @@ def main():
         if "R_mean" in r:
             print(f"  {name:13s} | R_i mean {r['R_mean']:.2f} std {r['R_std']:.2f} "
                   f"| Case2 goodput@eps {r.get('goodput_at_eps', float('nan')):.2f} "
-                  f"| Case1 goodput {r['global_goodput']:.2f} | CRPS-rate {float(np.mean(r['crps_rate'])):.3f}")
+                  f"| Case1 goodput {r['global_goodput']:.2f} | CRPS-rate {float(np.mean(r['crps_rate'])):.3f} "
+                  f"| ECal {r.get('ecal', float('nan')):.3f}")
 
     with open(os.path.join(args.out_dir, "uncertainty_2x2.json"), "w") as f:
         json.dump(results, f, indent=2)
