@@ -19,7 +19,7 @@ source "${VENV_DIR:-$HOME/MF_CSI_Prediction/venv}/bin/activate"
 export TF_CPP_MIN_LOG_LEVEL=3
 K="${K:-30}"; SNR="${SNR:-20}"; DIFF_STEPS="${DIFF_STEPS:-3}"; SN="${SN:-0.05}"; ETA="${ETA:-1.0}"; SEED="${SEED:-0}"
 tag=$([ "$ETA" = "0.0" ] && echo "det" || echo "stoch")
-ts=$(date +%y%m%d_%H%M%S); OUT="runs/uq2x2_snr${SNR}_${tag}_${ts}"; LOG="logs/uq2x2_snr${SNR}_${tag}_${ts}.txt"
+ts=$(date +%y%m%d_%H%M%S); OUT="runs/uq2x2_snr${SNR}_${tag}_ds${DIFF_STEPS}_${ts}"; LOG="logs/uq2x2_snr${SNR}_${tag}_ds${DIFF_STEPS}_${ts}.txt"
 EXTRA=""
 [ -n "${MF_MU:-}" ] && EXTRA="$EXTRA --mf-mu ${MF_MU}"
 [ -n "${MF_NOMU:-}" ] && EXTRA="$EXTRA --mf-nomu ${MF_NOMU}"
