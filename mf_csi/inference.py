@@ -25,7 +25,7 @@ import torch
 @torch.no_grad()
 def predict_next_frame(generator, z: torch.Tensor, mu: Optional[torch.Tensor] = None,
                        seed_std: float = 1.0, step_noise_std: float = 0.0,
-                       num_samples: int = 1) -> torch.Tensor:
+                       num_samples: int = 1, source_psd=None) -> torch.Tensor:
     """One-step prediction of the next CSI frame from latent Z. Returns [B, 2, Nt, Nc].
 
     mu (if given) centers the noise seed H^1 ~ N(mu, seed_std^2) -- the informative
@@ -38,7 +38,11 @@ def predict_next_frame(generator, z: torch.Tensor, mu: Optional[torch.Tensor] = 
     t = torch.ones(B, device=device)
     acc = torch.zeros(B, 2, Nt, Nc, device=device)
     for _ in range(max(1, num_samples)):
-        h1 = torch.randn(B, 2, Nt, Nc, device=device) * seed_std    # noise seed
+        h1 = torch.randn(B, 2, Nt, Nc, device=device)               # noise seed
+        if source_psd is not None:                                  # channel-shaped source
+            from .colored_prior import color
+            h1 = color(h1, source_psd.to(device))
+        h1 = h1 * seed_std
         if mu is not None:
             h1 = h1 + mu                                            # center on point estimate
         acc = acc + (h1 - generator(h1, z, r, t))                   # 1-NFE endpoint
@@ -49,9 +53,31 @@ def predict_next_frame(generator, z: torch.Tensor, mu: Optional[torch.Tensor] = 
 
 
 @torch.no_grad()
+@torch.no_grad()
+def ar_gaussian_mur_predict(encoder, past: torch.Tensor, num_future: int,
+                            seed_std: float = 1.0, source_psd=None) -> torch.Tensor:
+    """No-flow N(mu, R) baseline: the predictor's point estimate is the encoder's mu and
+    its uncertainty is colored Gaussian noise. Rolls the MEAN trajectory forward
+    deterministically (feeds mu back), and returns one sample mu + seed_std*color(eps).
+    Calling this K times yields the N(mu, R) predictive ensemble. Returns [B,Nf,2,Nt,Nc]."""
+    was = encoder.training; encoder.eval()
+    history = past; preds = []
+    for _ in range(num_future):
+        _, mu = encoder(history, return_mu=True)
+        eps = torch.randn_like(mu)
+        if source_psd is not None:
+            from .colored_prior import color
+            eps = color(eps, source_psd.to(mu.device))
+        preds.append(mu + seed_std * eps)                       # sample = mu + colored noise
+        history = torch.cat([history, mu.unsqueeze(1)], dim=1)  # feed back the mean
+    encoder.train(was)
+    return torch.stack(preds, dim=1)
+
+
 def autoregressive_predict(encoder, generator, past: torch.Tensor, num_future: int,
                            seed_std: float = 1.0, step_noise_std: float = 0.0,
-                           num_samples: int = 1, use_mu: bool = True) -> torch.Tensor:
+                           num_samples: int = 1, use_mu: bool = True,
+                           source_psd=None) -> torch.Tensor:
     """Roll out `num_future` frames autoregressively.
 
     past: [B, Np, 2, Nt, Nc] -> returns [B, num_future, 2, Nt, Nc].
@@ -65,7 +91,7 @@ def autoregressive_predict(encoder, generator, past: torch.Tensor, num_future: i
     for _ in range(num_future):
         z, mu = encoder(history, return_mu=True)
         nxt = predict_next_frame(generator, z, (mu if use_mu else None),
-                                 seed_std, step_noise_std, num_samples)
+                                 seed_std, step_noise_std, num_samples, source_psd=source_psd)
         preds.append(nxt)
         history = torch.cat([history, nxt.unsqueeze(1)], dim=1)
     encoder.train(was_training[0]); generator.train(was_training[1])

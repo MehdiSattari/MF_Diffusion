@@ -83,7 +83,8 @@ def augment_history(past: torch.Tensor, cfg: MeanFlowConfig) -> torch.Tensor:
 
 
 def meanflow_loss(encoder, generator, past: torch.Tensor, future: torch.Tensor,
-                  cfg: MeanFlowConfig) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+                  cfg: MeanFlowConfig, source_psd=None
+                  ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
     """Compute the MeanFlow loss for one batch.
 
     past:   [B, Np, 2, Nt, Nc]   history (conditioning)
@@ -99,7 +100,11 @@ def meanflow_loss(encoder, generator, past: torch.Tensor, future: torch.Tensor,
 
     # Step 3-4: next-frame target, source endpoint, instantaneous velocity.
     Y = future[:, 0]                                # [B, 2, Nt, Nc]
-    eps = torch.randn_like(Y) * cfg.source_std      # residual noise
+    eps = torch.randn_like(Y)
+    if source_psd is not None:                      # channel-shaped (colored) source
+        from .colored_prior import color
+        eps = color(eps, source_psd.to(Y.device))
+    eps = eps * cfg.source_std                       # residual noise (isotropic if psd=None)
     use_mu = cfg.informative_prior and (mu is not None)
     if use_mu:
         S = mu.detach() + eps                       # H^1 ~ N(mu, sigma^2); mu stop-grad here

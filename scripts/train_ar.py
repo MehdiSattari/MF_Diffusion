@@ -49,6 +49,8 @@ def parse_args():
     p.add_argument("--ckpt-every", type=int, default=5000)
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--source-psd", type=str, default=None,
+                   help="path to a residual PSD (.pt) for the channel-shaped colored source (MeanFlow)")
     return p.parse_args()
 
 
@@ -101,6 +103,11 @@ def main():
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    source_psd = None
+    if args.source_psd:
+        source_psd = torch.load(args.source_psd, map_location=device)["psd"].to(device)
+        print(f"colored source: loaded residual PSD from {args.source_psd}", flush=True)
+
     enc = TemporalEncoder(cfg.encoder).to(device)
     gen = UNetGenerator(cfg.generator).to(device)
     enc_eval = TemporalEncoder(cfg.encoder).to(device)
@@ -127,7 +134,8 @@ def main():
     val_batches = make_fixed_eval_set(cfg.data, cfg.train.val_samples, cfg.train.val_batch_size)
     train_iter = iter(DataLoader(
         CSIStreamDataset(cfg.data, batch_size=cfg.train.batch_size, steps_per_epoch=None), batch_size=None))
-    meta = {"objective": args.objective, "mu": args.mu, "diff_steps": args.diff_steps}
+    meta = {"objective": args.objective, "mu": args.mu, "diff_steps": args.diff_steps,
+            "source_psd": args.source_psd}
 
     enc.train(); gen.train()
     t0 = time.time(); running, running_aux, running_n = 0.0, 0.0, 0
@@ -137,7 +145,7 @@ def main():
         for g in opt.param_groups:
             g["lr"] = lr_at(step, args.lr, cfg.train.warmup_steps, cfg.train.total_steps)
         if args.objective == "meanflow":
-            loss, m = meanflow_loss(enc, gen, past, future, cfg.meanflow)
+            loss, m = meanflow_loss(enc, gen, past, future, cfg.meanflow, source_psd=source_psd)
             aux = m.get("mu_mse", torch.zeros(()))
         else:
             loss, m = diffusion_loss_shared(enc, gen, scheduler, past, future[:, 0], cfg.diu, huber,

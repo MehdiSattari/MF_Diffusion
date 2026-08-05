@@ -32,7 +32,8 @@ from mf_csi.data.dataset import _normalize, _split_batch, denormalize
 from mf_csi.models import TemporalEncoder, UNetGenerator, ARConvLSTM
 from mf_csi.diffusion import make_scheduler, corrupt_history
 from mf_csi.diffusion_shared import ddim_ar_predict_shared
-from mf_csi.inference import autoregressive_predict, ar_convlstm_predict, nmse, nmse_db
+from mf_csi.inference import (autoregressive_predict, ar_convlstm_predict, nmse, nmse_db,
+                              ar_gaussian_mur_predict)
 from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
                                 spectral_efficiency, outage_operating_curve, goodput_at_outage,
                                 outage_global, selected_rates, crps_rate, rank_counts, rank_uniformity)
@@ -43,7 +44,8 @@ LEVELS = [0.1, 0.3, 0.5, 0.7, 0.9]
 # name -> (color, is_point)
 STYLE = {"MeanFlow+mu": ("#d62728", False), "MeanFlow-mu": ("#f0997b", False),
          "Diffusion+mu": ("#1f77b4", False), "Diffusion-mu": ("#85b7eb", False),
-         "ConvLSTM": ("#2ca02c", True)}
+         "ConvLSTM": ("#2ca02c", True),
+         "MeanFlowCol+mu": ("#9467bd", False), "Gauss(mu,R)": ("#8c564b", False)}
 
 
 def parse_args():
@@ -53,6 +55,8 @@ def parse_args():
     p.add_argument("--diff-mu", type=str, default=None)
     p.add_argument("--diff-nomu", type=str, default=None)
     p.add_argument("--convlstm", type=str, default=None)
+    p.add_argument("--mf-mu-colored", type=str, default=None, help="colored-source MeanFlow+mu ckpt")
+    p.add_argument("--source-psd", type=str, default=None, help="residual PSD (.pt) for colored source + Gauss baseline")
     p.add_argument("--K", type=int, default=30)
     p.add_argument("--snr", type=float, default=20.0)
     p.add_argument("--diff-steps", type=int, default=3)
@@ -189,13 +193,28 @@ def main():
 
     results = {}
 
-    def add_meanflow(name, ckpt, use_mu):
+    psd = None
+    if args.source_psd:
+        psd = torch.load(args.source_psd, map_location=device)["psd"].to(device)
+        print(f"colored source: loaded residual PSD from {args.source_psd}")
+
+    def add_meanflow(name, ckpt, use_mu, source_psd=None):
         if not ckpt: return
         enc, gen = load_gen(ckpt, cfg, device)
         def sfn(hist, Nf):
             return torch.stack([autoregressive_predict(enc, gen, hist, Nf,
                                 seed_std=cfg.inference.seed_std, step_noise_std=args.step_noise,
-                                num_samples=1, use_mu=use_mu) for _ in range(args.K)], dim=0)
+                                num_samples=1, use_mu=use_mu, source_psd=source_psd) for _ in range(args.K)], dim=0)
+        results[name] = metrics_for(sfn, batches, device, args.snr, args)
+        print(f"[{name}] NMSE {nmse_db(torch.tensor(results[name]['nmse']).mean()).item():.2f} dB "
+              f"| cov0.9 {results[name]['cov0.9']:.3f} | goodput@{args.epsilon:.0%} {results[name]['goodput_at_eps']:.2f}")
+
+    def add_gaussian(name, ckpt, source_psd):
+        if not ckpt: return
+        enc, _ = load_gen(ckpt, cfg, device)
+        def sfn(hist, Nf):
+            return torch.stack([ar_gaussian_mur_predict(enc, hist, Nf,
+                                seed_std=cfg.inference.seed_std, source_psd=source_psd) for _ in range(args.K)], dim=0)
         results[name] = metrics_for(sfn, batches, device, args.snr, args)
         print(f"[{name}] NMSE {nmse_db(torch.tensor(results[name]['nmse']).mean()).item():.2f} dB "
               f"| cov0.9 {results[name]['cov0.9']:.3f} | goodput@{args.epsilon:.0%} {results[name]['goodput_at_eps']:.2f}")
@@ -212,6 +231,8 @@ def main():
 
     add_meanflow("MeanFlow+mu", args.mf_mu, True)
     add_meanflow("MeanFlow-mu", args.mf_nomu, False)
+    add_meanflow("MeanFlowCol+mu", args.mf_mu_colored, True, source_psd=psd)   # colored source
+    add_gaussian("Gauss(mu,R)", args.mf_mu_colored or args.mf_mu, psd)          # no-flow N(mu,R) baseline
     add_diffusion("Diffusion+mu", args.diff_mu, True)
     add_diffusion("Diffusion-mu", args.diff_nomu, False)
     if args.convlstm:
