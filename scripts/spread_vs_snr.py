@@ -38,14 +38,17 @@ def main():
 
     # newest run per SNR
     byid = {}
-    for d in sorted(glob.glob(args.glob)):
-        if "_ds" in d:            # skip the DDIM-step sweep dirs
-            continue
+    for d in sorted(glob.glob(args.glob)):           # ascending -> newest (later ts) wins
         j = os.path.join(d, "uncertainty_2x2.json")
         s = snr_of(d)
         if s is None or not os.path.isfile(j):
             continue
-        byid[s] = j               # later (sorted) wins -> newest timestamp
+        try:
+            dd = json.load(open(j))
+        except Exception:
+            continue
+        if all(m in dd for m in args.models):        # pick newest run that has ALL requested models
+            byid[s] = j
     snrs = sorted(byid)
     if not snrs:
         print(f"no run JSONs matched {args.glob}"); return
