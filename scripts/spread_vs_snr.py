@@ -49,6 +49,9 @@ def main():
     snrs = sorted(byid)
     if not snrs:
         print(f"no run JSONs matched {args.glob}"); return
+    for s in snrs:                       # show exactly which run dir is used per SNR
+        d = json.load(open(byid[s]))
+        print(f"[SNR {s:>2}] {os.path.dirname(byid[s])}  models={sorted(k for k in d if 'nmse' in d[k])}")
 
     data = {m: {"snr": [], "spread": [], "skill": [], "ratio": [], "cov": []} for m in args.models}
     print(f"{'SNR':>4} | {'model':13} | {'spread':>8} | {'skill':>8} | {'sp/sk':>6} | {'cov90':>6}")
