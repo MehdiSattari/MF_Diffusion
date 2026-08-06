@@ -17,9 +17,11 @@ import matplotlib.pyplot as plt
 
 MODELS = ["MeanFlow+mu", "Diffusion+mu", "MeanFlow-mu", "Diffusion-mu"]
 STYLE = {"MeanFlow+mu": ("#d62728", "o"), "Diffusion+mu": ("#1f77b4", "s"),
-         "MeanFlow-mu": ("#f0997b", "o"), "Diffusion-mu": ("#85b7eb", "s")}
+         "MeanFlow-mu": ("#f0997b", "o"), "Diffusion-mu": ("#85b7eb", "s"),
+         "MeanFlowCol+mu": ("#9467bd", "D"), "Gauss(mu,R)": ("#8c564b", "x")}
 LAB = {"MeanFlow+mu": "MeanFlow $+\\mu$", "Diffusion+mu": "Diffusion $+\\mu$",
-       "MeanFlow-mu": "MeanFlow $-\\mu$", "Diffusion-mu": "Diffusion $-\\mu$"}
+       "MeanFlow-mu": "MeanFlow $-\\mu$", "Diffusion-mu": "Diffusion $-\\mu$",
+       "MeanFlowCol+mu": "MeanFlow $+\\mu$ (colored)", "Gauss(mu,R)": "$\\mathcal{N}(\\mu,R)$"}
 
 
 def snr_of(path):
@@ -66,7 +68,11 @@ def main():
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     fig, ax = plt.subplots(1, 3, figsize=(12, 3.6))
     for m in args.models:
-        c, mk = STYLE[m]; D = data[m]
+        D = data[m]
+        if not D["snr"]:            # model absent from these runs -> skip (no crash)
+            print(f"note: '{m}' not present in the matched runs; skipping.")
+            continue
+        c, mk = STYLE.get(m, ("#333333", "o"))
         ax[0].plot(D["snr"], D["spread"], marker=mk, color=c, label=LAB[m])
         ax[1].plot(D["snr"], D["skill"], marker=mk, color=c, label=LAB[m])
         ax[2].plot(D["snr"], D["ratio"], marker=mk, color=c, label=LAB[m])
