@@ -22,6 +22,7 @@ OBJ="${OBJ:-meanflow}"; MU="${MU:-on}"; STEPS="${STEPS:-50000}"
 OUT="${OUT:-runs/ar_${OBJ}_mu${MU}_${SLURM_JOB_ID}}"
 EXTRA=""; [ -n "${BATCH:-}" ] && EXTRA="--batch-size ${BATCH}"; [ -n "${RESUME:-}" ] && EXTRA="$EXTRA --resume ${RESUME}"
 [ -n "${SOURCE_PSD:-}" ] && EXTRA="$EXTRA --source-psd ${SOURCE_PSD}"
+[ -n "${GEN_SIZE:-}" ] && EXTRA="$EXTRA --gen-size ${GEN_SIZE}"
 ts=$(date +%y%m%d_%H%M); LOG="logs/ar_${OBJ}_mu${MU}_${ts}.txt"
 echo "===== AR ($OBJ mu=$MU) STARTED $(date) =====" | tee "$LOG"
 python -m scripts.train_ar --objective "$OBJ" --mu "$MU" --out-dir "$OUT" --steps "$STEPS" $EXTRA >> "$LOG" 2>&1

@@ -51,6 +51,9 @@ def parse_args():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--source-psd", type=str, default=None,
                    help="path to a residual PSD (.pt) for the channel-shaped colored source (MeanFlow)")
+    p.add_argument("--gen-size", type=str, default=None,
+                   choices=["xs", "small", "medium", "large", "xl"],
+                   help="scale the shared generator for the accuracy-complexity Pareto")
     return p.parse_args()
 
 
@@ -92,6 +95,11 @@ def main():
     use_mu = (args.mu == "on")
     cfg = Config()
     cfg.data.normalization = "std"
+    if args.gen_size:
+        from mf_csi.config import apply_generator_size
+        apply_generator_size(cfg.generator, args.gen_size)
+        print(f"generator size={args.gen_size}: base_ch={cfg.generator.base_channels} "
+              f"res_blocks={cfg.generator.num_res_blocks} attn={cfg.generator.use_attention}", flush=True)
     cfg.train.total_steps = args.steps
     cfg.train.batch_size = args.batch_size
     cfg.train.eval_every = args.eval_every

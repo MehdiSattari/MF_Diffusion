@@ -135,6 +135,23 @@ class UNetConfig:
                                          # (False -> lightweight "small" backbone)
 
 
+def apply_generator_size(gen_cfg, size: str) -> str:
+    """Scale the shared UNetGenerator to a named size for the accuracy-complexity Pareto.
+    Returns a short label. Sizes keep norm_groups=8 dividing all channel counts."""
+    presets = {
+        "xs":     dict(base_channels=16, ch_mult=2, num_res_blocks=1, use_attention=False, norm_groups=8),
+        "small":  dict(base_channels=24, ch_mult=2, num_res_blocks=2, use_attention=False, norm_groups=8),
+        "medium": dict(base_channels=32, ch_mult=2, num_res_blocks=2, use_attention=True,  norm_groups=8),
+        "large":  dict(base_channels=48, ch_mult=2, num_res_blocks=3, use_attention=True,  norm_groups=8),
+        "xl":     dict(base_channels=64, ch_mult=2, num_res_blocks=3, use_attention=True,  norm_groups=8),
+    }
+    if size not in presets:
+        raise ValueError(f"unknown generator size '{size}'; choose from {list(presets)}")
+    for k, v in presets[size].items():
+        setattr(gen_cfg, k, v)
+    return size
+
+
 @dataclass
 class MeanFlowConfig:
     """MeanFlow training objective (the paper's Algorithm 2).

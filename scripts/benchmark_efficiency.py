@@ -34,7 +34,9 @@ from mf_csi.models import TemporalEncoder, UNetGenerator
 from mf_csi.models.diu import DiUEncoder, DiUNet
 from mf_csi.models import JointRegressor
 from mf_csi.diffusion import make_scheduler, ddim_ar_predict
+from mf_csi.diffusion_shared import ddim_ar_predict_shared
 from mf_csi.inference import autoregressive_predict
+from mf_csi.config import apply_generator_size
 
 
 # --------------------------------------------------------------------------- #
@@ -102,6 +104,11 @@ def parse_args():
     p.add_argument("--diu-steps", type=str, default="1,2,3,5,10,20",
                    help="DiU DDIM sampling-step sweep for the latency/FLOPs Pareto")
     p.add_argument("--mf-samples", type=int, default=1, help="MeanFlow 1-NFE draws per frame")
+    p.add_argument("--gen-size", type=str, default=None,
+                   choices=["xs", "small", "medium", "large", "xl"],
+                   help="scale the shared generator (for the latency axis of the Pareto)")
+    p.add_argument("--nfe-sweep", type=str, default="1,3,10,20,50",
+                   help="shared-backbone diffusion NFE sweep (MeanFlow=1 is the reference)")
     p.add_argument("--cpu", action="store_true", help="also time on CPU (slow for DiU)")
     p.add_argument("--diu-ckpt", type=str, default=None)
     p.add_argument("--mf-ckpt", type=str, default=None)
@@ -113,6 +120,7 @@ def parse_args():
 def main():
     args = parse_args()
     cfg = Config()
+    gen_size = apply_generator_size(cfg.generator, args.gen_size) if args.gen_size else "medium"
     Np, Nf = cfg.data.num_past, cfg.data.num_future
     Nt, Nc = cfg.data.num_bs_ant, cfg.data.num_subcarriers_used
     os.makedirs(args.out_dir, exist_ok=True)
@@ -162,6 +170,13 @@ def main():
         past = torch.randn(B, Np, 2, Nt, Nc, device=dev)
         return lambda: reg(past)                       # all Nf frames in ONE forward
 
+    def shared_diff_predict(B, steps):
+        """Diffusion on the SAME shared backbone as MeanFlow (controlled comparison):
+        identical encoder + UNetGenerator, differing only in NFE."""
+        cfg.diu.sampling_steps = steps
+        past = torch.randn(B, Np, 2, Nt, Nc, device=dev)
+        return lambda: ddim_ar_predict_shared(enc_m, gen_m, scheduler, past, Nf, cfg.diu)
+
     diu_step_list = [int(s) for s in args.diu_steps.split(",") if s.strip()]
     diu_main_steps = cfg.diu.sampling_steps if cfg.diu.sampling_steps in diu_step_list else diu_step_list[-1]
 
@@ -202,6 +217,19 @@ def main():
             fl = flops_of(diu_predict(1, steps))
             sweep.append({"nfe_per_frame": steps, "unet_evals": Nf * steps,
                           "latency_ms_bB": (mB, sB), "flops_horizon": fl})
+
+        # SHARED-BACKBONE NFE sweep: MeanFlow (1) vs diffusion (N), IDENTICAL generator.
+        # This is the controlled latency-vs-NFE curve for the paper. B=1 (real-time,
+        # single-user) and batched, plus FLOPs.
+        nfe_list = [int(s) for s in args.nfe_sweep.split(",") if s.strip()]
+        shared_sweep = []
+        for steps in nfe_list:
+            m1, s1 = time_ms(shared_diff_predict(1, steps), dev, args.warmup, args.repeats)
+            mB, sB = time_ms(shared_diff_predict(args.batch, steps), dev, args.warmup, max(5, args.repeats // 2))
+            fl = flops_of(shared_diff_predict(1, steps))
+            shared_sweep.append({"nfe_per_frame": steps, "gen_evals": Nf * steps,
+                                 "latency_ms_b1": (m1, s1), "latency_ms_bB": (mB, sB),
+                                 "flops_horizon": fl})
 
         # optional CPU timing (B=1 only; DiU capped at a few steps to stay quick)
         cpu = None
@@ -253,16 +281,24 @@ def main():
         print(f"  {s['nfe_per_frame']:2d} NFE/frame ({s['unet_evals']:3d} evals) | "
               f"B={args.batch} {s['latency_ms_bB'][0]:8.2f} ms | FLOPs {fmt_flops(s['flops_horizon'])}")
 
+    print(f"\n===== SHARED-BACKBONE NFE SWEEP (gen_size={gen_size}, {params['MeanFlow']['total']/1e6:.2f}M) =====")
+    print("  identical encoder+generator; NFE=1 is MeanFlow, NFE>1 is diffusion")
+    for s in shared_sweep:
+        tag = "MeanFlow" if s["nfe_per_frame"] == 1 else "Diffusion"
+        print(f"  {s['nfe_per_frame']:2d} NFE/frame [{tag:9s}] | B=1 {s['latency_ms_b1'][0]:7.2f} ms "
+              f"| B={args.batch} {s['latency_ms_bB'][0]:8.2f} ms | FLOPs {fmt_flops(s['flops_horizon'])}")
+
     if cpu:
         print("\n=================== CPU LATENCY (B=1) ===================")
         for k, (m, s) in cpu.items():
             print(f"  {k}: {m:.1f}+-{s:.1f} ms")
 
     dump = {"device": gpu_name, "batch": args.batch, "Np": Np, "Nf": Nf,
-            "params": params, "nfe_per_horizon": nfe, "flops_horizon": flops,
-            "latency_memory": results, "diu_nfe_sweep": sweep, "cpu_latency": cpu,
+            "gen_size": gen_size, "params": params, "nfe_per_horizon": nfe,
+            "flops_horizon": flops, "latency_memory": results, "diu_nfe_sweep": sweep,
+            "shared_nfe_sweep": shared_sweep, "cpu_latency": cpu,
             "diu_main_nfe": diu_main_steps, "mf_samples": args.mf_samples}
-    out = os.path.join(args.out_dir, "efficiency.json")
+    out = os.path.join(args.out_dir, f"efficiency_{gen_size}.json")
     with open(out, "w") as f:
         json.dump(dump, f, indent=2)
     print(f"\nsaved: {out}")
