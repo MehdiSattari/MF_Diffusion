@@ -21,9 +21,10 @@ export DIFF_MU="${DIFF_MU:-runs/ar_diffusion_muon_6917023/ckpt_best.pt}"
 export DIFF_NOMU="${DIFF_NOMU:-runs/ar_diffusion_muoff_6917024/ckpt_best.pt}"
 
 SNR="${SNR:-20}"                     # set SNR=10 (or 5) for a rate-discriminating regime
+ETA="${ETA:-1.0}"                    # 1.0 stochastic (calibration); 0.0 deterministic (accuracy-optimal)
 for ds in 3 10 20 50; do
-  jid=$(env K=30 SNR="$SNR" SEED=0 ETA=1.0 DIFF_STEPS="$ds" LOAD_BATCHES="$BATCHES" \
+  jid=$(env K=30 SNR="$SNR" SEED=0 ETA="$ETA" DIFF_STEPS="$ds" LOAD_BATCHES="$BATCHES" \
         sbatch --parsable slurm/eval_uncertainty_2x2.sbatch)
-  echo "submitted SNR=${SNR}dB DDIM steps=${ds} as $jid"
+  echo "submitted SNR=${SNR}dB eta=${ETA} DDIM steps=${ds} as $jid"
 done
-echo "done: 4 jobs queued (SNR=${SNR}dB, DDIM steps 3/10/20/50, paired on $BATCHES)."
+echo "done: 4 jobs queued (SNR=${SNR}dB, eta=${ETA}, DDIM steps 3/10/20/50, paired on $BATCHES)."
