@@ -34,7 +34,7 @@ from mf_csi.diffusion import make_scheduler, corrupt_history
 from mf_csi.diffusion_shared import ddim_ar_predict_shared
 from mf_csi.inference import (autoregressive_predict, ar_convlstm_predict, nmse, nmse_db,
                               ar_gaussian_mur_predict)
-from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse,
+from mf_csi.uncertainty import (crps, coverage, spread_skill, ensemble_mean_nmse, per_sample_nmse,
                                 spectral_efficiency, outage_operating_curve, goodput_at_outage,
                                 outage_global, selected_rates, crps_rate, rank_counts, rank_uniformity)
 
@@ -127,6 +127,7 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
         s = denorm_ens(sample_fn(hist, future.shape[1]), b["stats"])   # [K,B,Nf,2,Nt,Nc]
         y = denormalize(future, b["stats"])
         agg.setdefault("nmse", []).append(ensemble_mean_nmse(s, y)[0])
+        agg.setdefault("nmse_persample", []).append(per_sample_nmse(s, y)[0])
         agg.setdefault("se_pred", []).append(spectral_efficiency(s.mean(0), y, snr)[0])
         oc_o, oc_g = outage_operating_curve(s, y, snr)
         agg.setdefault("oc_outage", []).append(oc_o); agg.setdefault("oc_goodput", []).append(oc_g)
@@ -303,7 +304,9 @@ def main():
             print(f"  {name:13s} | R_i mean {r['R_mean']:.2f} std {r['R_std']:.2f} "
                   f"| Case2 goodput@eps {r.get('goodput_at_eps', float('nan')):.2f} "
                   f"| Case1 goodput {r['global_goodput']:.2f} | CRPS-rate {float(np.mean(r['crps_rate'])):.3f} "
-                  f"| ECal {r.get('ecal', float('nan')):.3f} | rankU {r.get('rank_uniformity', float('nan')):.3f}")
+                  f"| ECal {r.get('ecal', float('nan')):.3f} | rankU {r.get('rank_uniformity', float('nan')):.3f} "
+                  f"| ensNMSE {nmse_db(torch.tensor(r['nmse']).mean()).item():.2f} "
+                  f"| pNMSE {nmse_db(torch.tensor(r['nmse_persample']).mean()).item():.2f} dB")
 
     with open(os.path.join(args.out_dir, "uncertainty_2x2.json"), "w") as f:
         json.dump(results, f, indent=2)

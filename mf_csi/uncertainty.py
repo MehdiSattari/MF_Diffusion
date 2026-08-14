@@ -35,6 +35,18 @@ def ensemble_mean_nmse(samples: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Te
     return per_step, per_step.mean()
 
 
+def per_sample_nmse(samples: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """NMSE of an INDIVIDUAL sample, averaged over the K draws (the 'normal', point-to-point
+    NMSE of a single prediction). Unlike the ensemble mean, this does not average out sample
+    noise, so it measures how good a single generated frame is -- and it should improve as
+    more sampling steps make each draw more faithful. samples [K,B,Nf,2,Nt,Nc], y [B,...]."""
+    err = (samples - y.unsqueeze(0)).pow(2).flatten(3).sum(-1)      # [K,B,Nf]
+    power = y.pow(2).flatten(2).sum(-1).clamp_min(1e-12)            # [B,Nf]
+    nmse = err / power.unsqueeze(0)                                 # [K,B,Nf]
+    per_step = nmse.mean(dim=(0, 1))                                # [Nf]
+    return per_step, per_step.mean()
+
+
 def crps(samples: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """Sample-based CRPS (lower is better).
 
