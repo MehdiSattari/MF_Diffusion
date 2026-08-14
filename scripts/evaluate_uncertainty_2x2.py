@@ -185,7 +185,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.makedirs(args.out_dir, exist_ok=True)
     _mode = "deterministic" if args.ddim_eta == 0.0 else "stochastic"
-    print(f"shared eval set: {args.n_samples} | K={args.K} | SNR={args.snr} | diff_steps={args.diff_steps} | ddim_eta={args.ddim_eta} ({_mode}) | seed={args.seed}")
+    print(f"shared eval set: {args.n_samples} | K={args.K} | SNR={args.snr} | diff_steps={args.diff_steps} | ddim_eta={args.ddim_eta} ({_mode}) | seed={args.seed} | gen_size={args.gen_size or 'medium'}")
     if args.load_batches:
         batches = torch.load(args.load_batches, map_location="cpu")
         print(f"loaded {len(batches)} pre-generated eval batches from {args.load_batches} "
