@@ -1,0 +1,6 @@
+{"device":"Tesla T4","note":"MeanFlow=1NFE B=1/B=64 ms; diffusion 3NFE B=1; params in M",
+ "xs":    {"gen":0.578,"total":1.327,"mf_b1":115.06,"mf_b64":1235.27,"diff3_b1":218.47,"mf_flops":106.99},
+ "small": {"gen":0.946,"total":1.695,"mf_b1":124.15,"mf_b64":1218.83,"diff3_b1":241.42,"mf_flops":107.52},
+ "medium":{"gen":1.459,"total":2.209,"mf_b1":150.02,"mf_b64":1247.41,"diff3_b1":315.82,"mf_flops":108.36},
+ "large": {"gen":3.005,"total":3.755,"mf_b1":152.34,"mf_b64":1297.44,"diff3_b1":335.69,"mf_flops":110.87},
+ "xl":    {"gen":4.867,"total":5.616,"mf_b1":153.85,"mf_b64":1339.67,"diff3_b1":334.98,"mf_flops":114.02}}

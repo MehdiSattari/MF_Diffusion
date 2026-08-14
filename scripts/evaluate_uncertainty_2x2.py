@@ -57,6 +57,9 @@ def parse_args():
     p.add_argument("--convlstm", type=str, default=None)
     p.add_argument("--mf-mu-colored", type=str, default=None, help="colored-source MeanFlow+mu ckpt")
     p.add_argument("--source-psd", type=str, default=None, help="residual PSD (.pt) for colored source + Gauss baseline")
+    p.add_argument("--gen-size", type=str, default=None,
+                   choices=["xs", "small", "medium", "large", "xl"],
+                   help="build the generator at this size (must match the checkpoint) for the Pareto")
     p.add_argument("--K", type=int, default=30)
     p.add_argument("--snr", type=float, default=20.0)
     p.add_argument("--diff-steps", type=int, default=3)
@@ -169,6 +172,9 @@ def metrics_for(sample_fn, batches, device, snr, args, is_point=False):
 def main():
     args = parse_args()
     cfg = Config()
+    if args.gen_size:
+        from mf_csi.config import apply_generator_size
+        apply_generator_size(cfg.generator, args.gen_size)
     cfg.data.seed = args.seed
     set_all_seeds(args.seed)               # PAIR the runs: identical channels + sampling draws
     cfg.diu.sampling_steps = args.diff_steps
