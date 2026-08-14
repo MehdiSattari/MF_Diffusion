@@ -205,7 +205,9 @@ def main():
         print(f"colored source: loaded residual PSD from {args.source_psd}")
 
     def add_meanflow(name, ckpt, use_mu, source_psd=None):
-        if not ckpt: return
+        if not ckpt or not os.path.isfile(ckpt):
+            if ckpt: print(f"  [skip] {name}: checkpoint not found: {ckpt}")
+            return
         enc, gen = load_gen(ckpt, cfg, device)
         def sfn(hist, Nf):
             return torch.stack([autoregressive_predict(enc, gen, hist, Nf,
@@ -216,7 +218,9 @@ def main():
               f"| cov0.9 {results[name]['cov0.9']:.3f} | goodput@{args.epsilon:.0%} {results[name]['goodput_at_eps']:.2f}")
 
     def add_gaussian(name, ckpt, source_psd):
-        if not ckpt: return
+        if not ckpt or not os.path.isfile(ckpt):
+            if ckpt: print(f"  [skip] {name}: checkpoint not found: {ckpt}")
+            return
         enc, _ = load_gen(ckpt, cfg, device)
         def sfn(hist, Nf):
             return torch.stack([ar_gaussian_mur_predict(enc, hist, Nf,
@@ -226,7 +230,9 @@ def main():
               f"| cov0.9 {results[name]['cov0.9']:.3f} | goodput@{args.epsilon:.0%} {results[name]['goodput_at_eps']:.2f}")
 
     def add_diffusion(name, ckpt, use_mu):
-        if not ckpt: return
+        if not ckpt or not os.path.isfile(ckpt):
+            if ckpt: print(f"  [skip] {name}: checkpoint not found: {ckpt}")
+            return
         enc, gen = load_gen(ckpt, cfg, device)
         def sfn(hist, Nf):
             return torch.stack([ddim_ar_predict_shared(enc, gen, scheduler, hist, Nf, cfg.diu,
