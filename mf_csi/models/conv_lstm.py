@@ -65,16 +65,23 @@ class ConvLSTM(nn.Module):
             cells.append(ConvLSTMCell(cin, hidden_channels, kernel_size))
         self.cells = nn.ModuleList(cells)
 
+    def step(self, x_t: torch.Tensor, states):
+        """Advance ONE time step. x_t: [B, C, H, W]; states: per-layer (h, c) list.
+        Returns (top_hidden, new_states). This is the O(1)-per-step recurrent update
+        used for autoregressive inference -- no reprocessing of the history."""
+        inp = x_t
+        new_states = []
+        for layer, cell in enumerate(self.cells):
+            h, c = cell(inp, states[layer])
+            new_states.append((h, c))
+            inp = h
+        return inp, new_states
+
     def forward(self, x: torch.Tensor
                 ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
         B, T, C, H, W = x.shape
         states = [cell.init_state(B, (H, W), x.device, x.dtype) for cell in self.cells]
         top_hidden = None
         for t in range(T):
-            inp = x[:, t]
-            for layer, cell in enumerate(self.cells):
-                h, c = cell(inp, states[layer])
-                states[layer] = (h, c)
-                inp = h          # feed this layer's hidden state to the next layer
-            top_hidden = inp     # hidden state of the top layer at this time step
+            top_hidden, states = self.step(x[:, t], states)
         return top_hidden, states

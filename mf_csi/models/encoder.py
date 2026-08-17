@@ -60,6 +60,13 @@ class TemporalEncoder(nn.Module):
                                      getattr(cfg, "mu_channels", 2),
                                      kernel_size=3, padding=1)
 
+    def _heads(self, hidden: torch.Tensor, return_mu: bool):
+        z = self.final_act(self.proj(self.dropout(self.norm(hidden))))
+        if not return_mu:
+            return z
+        mu = self.mu_head(hidden) if self.predict_mu else None
+        return z, mu
+
     def forward(self, h_past: torch.Tensor, return_mu: bool = False
                 ) -> Union[torch.Tensor, Tuple[torch.Tensor, Optional[torch.Tensor]]]:
         """h_past: [B, Np, in_channels, Nt, Nc].
@@ -68,11 +75,17 @@ class TemporalEncoder(nn.Module):
         return_mu=True  -> (Z, mu) with mu [B, mu_channels, Nt, Nc] or None.
         """
         hidden, _ = self.convlstm(h_past)     # [B, hidden, Nt, Nc]
-        z = self.norm(hidden)
-        z = self.dropout(z)
-        z = self.proj(z)
-        z = self.final_act(z)
-        if not return_mu:
-            return z
-        mu = self.mu_head(hidden) if self.predict_mu else None
-        return z, mu
+        return self._heads(hidden, return_mu)
+
+    def warmup(self, h_past: torch.Tensor):
+        """Process the history ONCE to obtain the recurrent state (O(Np)). Returns
+        (states, top_hidden); use step() thereafter for O(1)-per-frame AR inference."""
+        top_hidden, states = self.convlstm(h_past)
+        return states, top_hidden
+
+    def step(self, frame: torch.Tensor, states, return_mu: bool = False):
+        """Advance the ConvLSTM by ONE frame (O(1)) and emit (z[, mu]) + new states.
+        frame: [B, in_channels, Nt, Nc]. Equivalent to re-encoding the full history
+        but at constant per-step cost."""
+        top_hidden, new_states = self.convlstm.step(frame, states)
+        return self._heads(top_hidden, return_mu), new_states
