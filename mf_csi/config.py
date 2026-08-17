@@ -266,6 +266,8 @@ class DiUConfig:
     ddim_eta: float = 0.0
     huber_delta: float = 0.016
     deterministic_init: bool = True      # start the sampler from zeros (paper behaviour)
+    timestep_spacing: str = "leading"    # DDIM step placement: "leading"|"trailing"|"linspace"
+                                         # ("trailing" is the SD few-step fix)
 
     # history noise augmentation (per-sample random SNR)
     train_snr_min: float = -20.0

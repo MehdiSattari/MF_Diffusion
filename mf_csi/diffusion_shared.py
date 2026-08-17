@@ -52,8 +52,22 @@ def diffusion_loss_shared(encoder, generator, scheduler, history, target,
     t = torch.randint(0, cfg.num_train_timesteps, (B,), device=device, dtype=torch.long)
     x_t = scheduler.add_noise(diff_target, noise, t)
     tn = _tn(t, cfg.num_train_timesteps)
-    pred = generator(x_t, z, tn, tn)                  # predict clean (residual or x0)
-    flow_loss = huber(pred, diff_target)
+    pred = generator(x_t, z, tn, tn)                  # network output (interpreted per prediction_type)
+    # Regression target depends on the parameterization (must match the scheduler's
+    # prediction_type so multi-step DDIM sampling is consistent):
+    #   'sample'        -> predict the clean signal (residual or x0)  [default]
+    #   'epsilon'       -> predict the added noise
+    #   'v_prediction'  -> predict the velocity v = sqrt(abar) eps - sqrt(1-abar) x0
+    ptype = getattr(cfg, "prediction_type", "sample")
+    if ptype == "sample":
+        objective = diff_target
+    elif ptype == "epsilon":
+        objective = noise
+    elif ptype == "v_prediction":
+        objective = scheduler.get_velocity(diff_target, noise, t)
+    else:
+        raise ValueError(f"unsupported prediction_type: {ptype}")
+    flow_loss = huber(pred, objective)
     if use_mu and mu is not None:
         aux = F.mse_loss(mu, x0)                      # train mu toward E[Y|history]
         loss = flow_loss + mu_weight * aux

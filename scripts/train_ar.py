@@ -45,6 +45,10 @@ def parse_args():
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--diff-steps", type=int, default=3, help="DDIM steps (diffusion eval)")
+    p.add_argument("--prediction-type", type=str, default=None,
+                   choices=["sample", "epsilon", "v_prediction"],
+                   help="diffusion parameterization; default keeps config's 'sample' (predict-x0). "
+                        "'v_prediction' gives the monotone NMSE-improves-with-steps behaviour.")
     p.add_argument("--eval-every", type=int, default=2000)
     p.add_argument("--ckpt-every", type=int, default=5000)
     p.add_argument("--resume", type=str, default=None)
@@ -105,6 +109,9 @@ def main():
     cfg.train.eval_every = args.eval_every
     cfg.train.ckpt_every = args.ckpt_every
     cfg.diu.sampling_steps = args.diff_steps
+    if args.prediction_type:
+        cfg.diu.prediction_type = args.prediction_type
+        print(f"diffusion prediction_type={cfg.diu.prediction_type}", flush=True)
     cfg.meanflow.informative_prior = use_mu
     cfg.inference.seed_std = cfg.meanflow.source_std
     os.makedirs(args.out_dir, exist_ok=True)
@@ -143,7 +150,7 @@ def main():
     train_iter = iter(DataLoader(
         CSIStreamDataset(cfg.data, batch_size=cfg.train.batch_size, steps_per_epoch=None), batch_size=None))
     meta = {"objective": args.objective, "mu": args.mu, "diff_steps": args.diff_steps,
-            "source_psd": args.source_psd}
+            "source_psd": args.source_psd, "prediction_type": cfg.diu.prediction_type}
 
     enc.train(); gen.train()
     t0 = time.time(); running, running_aux, running_n = 0.0, 0.0, 0

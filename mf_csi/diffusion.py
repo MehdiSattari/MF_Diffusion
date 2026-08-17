@@ -18,11 +18,16 @@ from .config import DiUConfig
 
 def make_scheduler(cfg: DiUConfig):
     from diffusers import DDIMScheduler
-    return DDIMScheduler(
-        num_train_timesteps=cfg.num_train_timesteps,
-        beta_schedule=cfg.beta_schedule,
-        prediction_type=cfg.prediction_type,
-    )
+    kw = dict(num_train_timesteps=cfg.num_train_timesteps,
+              beta_schedule=cfg.beta_schedule,
+              prediction_type=cfg.prediction_type)
+    spacing = getattr(cfg, "timestep_spacing", "leading")
+    try:
+        return DDIMScheduler(**kw, timestep_spacing=spacing)
+    except TypeError:                       # older diffusers: no timestep_spacing arg
+        if spacing != "leading":
+            print(f"[make_scheduler] diffusers too old for timestep_spacing={spacing}; using default")
+        return DDIMScheduler(**kw)
 
 
 def corrupt_history(past: torch.Tensor, snr_db_min: float, snr_db_max: float) -> torch.Tensor:
