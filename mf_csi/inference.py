@@ -81,19 +81,24 @@ def autoregressive_predict(encoder, generator, past: torch.Tensor, num_future: i
     """Roll out `num_future` frames autoregressively.
 
     past: [B, Np, 2, Nt, Nc] -> returns [B, num_future, 2, Nt, Nc].
-    The history window grows as predictions are appended (Eq. 23). The encoder's
-    point estimate mu centers each frame's source (informative prior); num_samples
-    averages that many 1-NFE draws per frame (conditional-mean estimate)."""
+    The encoder's point estimate mu centers each frame's source (informative prior);
+    num_samples averages that many 1-NFE draws per frame (conditional-mean estimate).
+
+    Uses the recurrent ConvLSTM state: the history is encoded ONCE (warm-up, O(Np)), then
+    each frame advances the state by a single step (O(1)) with the predicted frame fed
+    back -- numerically identical to re-encoding the growing history, at constant per-step
+    cost (the inference-complexity model in the paper)."""
     was_training = (encoder.training, generator.training)
     encoder.eval(); generator.eval()
-    history = past
+    states, top_hidden = encoder.warmup(past)                 # encode history once
+    z, mu = encoder._heads(top_hidden, return_mu=True)        # conditioning for frame 1
     preds = []
-    for _ in range(num_future):
-        z, mu = encoder(history, return_mu=True)
+    for n in range(num_future):
         nxt = predict_next_frame(generator, z, (mu if use_mu else None),
                                  seed_std, step_noise_std, num_samples, source_psd=source_psd)
         preds.append(nxt)
-        history = torch.cat([history, nxt.unsqueeze(1)], dim=1)
+        if n < num_future - 1:                                # advance state with the prediction
+            (z, mu), states = encoder.step(nxt, states, return_mu=True)
     encoder.train(was_training[0]); generator.train(was_training[1])
     return torch.stack(preds, dim=1)
 
