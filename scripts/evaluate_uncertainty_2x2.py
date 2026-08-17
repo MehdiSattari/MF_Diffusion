@@ -60,6 +60,8 @@ def parse_args():
     p.add_argument("--gen-size", type=str, default=None,
                    choices=["xs", "small", "medium", "large", "xl"],
                    help="build the generator at this size (must match the checkpoint) for the Pareto")
+    p.add_argument("--det-init", action="store_true",
+                   help="zero-init single-path (mean-seeking) diffusion; use with --ddim-eta 0 and --K 1")
     p.add_argument("--K", type=int, default=30)
     p.add_argument("--snr", type=float, default=20.0)
     p.add_argument("--diff-steps", type=int, default=3)
@@ -179,8 +181,9 @@ def main():
     cfg.data.seed = args.seed
     set_all_seeds(args.seed)               # PAIR the runs: identical channels + sampling draws
     cfg.diu.sampling_steps = args.diff_steps
-    cfg.diu.deterministic_init = False; cfg.diu.ddim_eta = args.ddim_eta  # eta=1 stochastic (UQ), eta=0 deterministic (best NMSE)
-    # random init keeps an ensemble even at eta=0, so coverage still reports the calibration cost
+    cfg.diu.deterministic_init = bool(args.det_init)   # zero-init single-path (mean-seeking) vs random-init posterior
+    cfg.diu.ddim_eta = args.ddim_eta                    # eta=1 stochastic (UQ), eta=0 deterministic
+    # random init keeps an ensemble even at eta=0; zero-init+eta=0 is one deterministic PF-ODE path
     cfg.inference.seed_std = cfg.meanflow.source_std
     scheduler = make_scheduler(cfg.diu)
     device = "cuda" if torch.cuda.is_available() else "cpu"
