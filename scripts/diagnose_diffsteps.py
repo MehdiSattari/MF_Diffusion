@@ -76,7 +76,9 @@ def parse_args():
 
 @torch.no_grad()
 def eval_cell(enc, gen, scheduler, cfg, batches, device, snr, K, use_mu):
-    """Return (ensNMSE_db, pNMSE_db, cov90, crps) averaged over the paired channels."""
+    """NMSE at the FIRST and LAST AR prediction step (not the horizon average), so we can
+    see rollout stability. Returns a dict with ens/per NMSE at step 1 and step Nf, plus
+    horizon-averaged cov90 and CRPS."""
     ens_ps, per_ps, covs, crpss = [], [], [], []
     for b in batches:
         past, future = b["past"].to(device), b["future"].to(device)
@@ -86,13 +88,15 @@ def eval_cell(enc, gen, scheduler, cfg, batches, device, snr, K, use_mu):
                                                  use_mu=use_mu) for _ in range(K)], dim=0)
         s = denorm_ens(s, b["stats"])                       # [K,B,Nf,2,Nt,Nc]
         y = denormalize(future, b["stats"])
-        ens_ps.append(ensemble_mean_nmse(s, y)[0])          # per-step tensor
-        per_ps.append(per_sample_nmse(s, y)[0])
+        ens_ps.append(ensemble_mean_nmse(s, y)[0])          # per-step tensor [Nf]
+        per_ps.append(per_sample_nmse(s, y)[0])             # per-step tensor [Nf]
         covs.append(coverage(s, y, 0.9)[1].item())
         crpss.append(crps(s, y)[0])
-    ens = nmse_db(torch.stack(ens_ps).mean(0).mean()).item()
-    per = nmse_db(torch.stack(per_ps).mean(0).mean()).item()
-    return ens, per, float(np.mean(covs)), float(torch.stack(crpss).mean(0).mean())
+    ens = torch.stack(ens_ps).mean(0)                       # [Nf], linear
+    per = torch.stack(per_ps).mean(0)                       # [Nf], linear
+    return {"ens_first": nmse_db(ens[0]).item(), "ens_last": nmse_db(ens[-1]).item(),
+            "per_first": nmse_db(per[0]).item(), "per_last": nmse_db(per[-1]).item(),
+            "cov90": float(np.mean(covs)), "crps": float(torch.stack(crpss).mean(0).mean())}
 
 
 def main():
@@ -132,8 +136,10 @@ def main():
     etas = [float(x) for x in args.etas.split(",") if x.strip()]
 
     rows = []
-    header = f"{'init':9s} {'spacing':9s} {'eta':4s} {'steps':>5s} | {'ensNMSE':>8s} {'pNMSE':>8s} {'cov90':>6s} {'CRPS':>7s}"
-    print("\n" + header); print("-" * len(header))
+    header = (f"{'init':9s} {'spacing':9s} {'eta':4s} {'steps':>5s} | "
+              f"{'ens@1':>7s} {'ens@N':>7s} {'p@1':>7s} {'p@N':>7s} {'cov90':>6s} {'CRPS':>7s}")
+    print("\n(ens@1/ens@N = ensemble-mean NMSE at first/last AR step; p = per-sample)")
+    print(header); print("-" * len(header))
     for init in inits:
         cfg.diu.deterministic_init = (init == "zeros")
         for spacing in spacings:
@@ -146,12 +152,12 @@ def main():
                     cfg.diu.sampling_steps = st
                     scheduler = make_scheduler(cfg.diu)
                     set_all_seeds(args.seed)             # identical sampling draws per cell
-                    ens, per, cov, cr = eval_cell(enc, gen, scheduler, cfg, batches,
-                                                  device, args.snr, Kc, use_mu)
+                    m = eval_cell(enc, gen, scheduler, cfg, batches, device, args.snr, Kc, use_mu)
                     print(f"{init:9s} {spacing:9s} {eta:<4.1f} {st:5d} | "
-                          f"{ens:8.2f} {per:8.2f} {cov:6.3f} {cr:7.3f}  (K={Kc})", flush=True)
+                          f"{m['ens_first']:7.2f} {m['ens_last']:7.2f} {m['per_first']:7.2f} "
+                          f"{m['per_last']:7.2f} {m['cov90']:6.3f} {m['crps']:7.3f}  (K={Kc})", flush=True)
                     rows.append({"init": init, "spacing": spacing, "eta": eta, "steps": st,
-                                 "K": Kc, "ensNMSE_db": ens, "pNMSE_db": per, "cov90": cov, "crps": cr})
+                                 "K": Kc, **m})
 
     out = os.path.join(args.out_dir, "diffsteps_diagnosis.json")
     json.dump({"ckpt": args.diff_mu, "prediction_type": ptype, "use_mu": use_mu,
