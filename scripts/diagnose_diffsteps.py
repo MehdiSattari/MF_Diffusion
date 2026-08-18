@@ -76,10 +76,10 @@ def parse_args():
 
 @torch.no_grad()
 def eval_cell(enc, gen, scheduler, cfg, batches, device, snr, K, use_mu):
-    """NMSE at the FIRST and LAST AR prediction step (not the horizon average), so we can
-    see rollout stability. Returns a dict with ens/per NMSE at step 1 and step Nf, plus
-    horizon-averaged cov90 and CRPS."""
-    ens_ps, per_ps, covs, crpss = [], [], [], []
+    """All metrics at the FIRST and LAST AR prediction step (not the horizon average), so we
+    can see rollout stability of accuracy AND calibration. Returns ens/per NMSE, cov90, and
+    CRPS, each at step 1 and step Nf."""
+    ens_ps, per_ps, cov_ps, crps_ps = [], [], [], []
     for b in batches:
         past, future = b["past"].to(device), b["future"].to(device)
         hist = corrupt_history(past, snr, snr)
@@ -90,13 +90,16 @@ def eval_cell(enc, gen, scheduler, cfg, batches, device, snr, K, use_mu):
         y = denormalize(future, b["stats"])
         ens_ps.append(ensemble_mean_nmse(s, y)[0])          # per-step tensor [Nf]
         per_ps.append(per_sample_nmse(s, y)[0])             # per-step tensor [Nf]
-        covs.append(coverage(s, y, 0.9)[1].item())
-        crpss.append(crps(s, y)[0])
+        cov_ps.append(coverage(s, y, 0.9)[0])               # per-step cov90  [Nf]
+        crps_ps.append(crps(s, y)[0])                       # per-step CRPS   [Nf]
     ens = torch.stack(ens_ps).mean(0)                       # [Nf], linear
     per = torch.stack(per_ps).mean(0)                       # [Nf], linear
+    cov = torch.stack(cov_ps).mean(0)                       # [Nf]
+    cr = torch.stack(crps_ps).mean(0)                       # [Nf]
     return {"ens_first": nmse_db(ens[0]).item(), "ens_last": nmse_db(ens[-1]).item(),
             "per_first": nmse_db(per[0]).item(), "per_last": nmse_db(per[-1]).item(),
-            "cov90": float(np.mean(covs)), "crps": float(torch.stack(crpss).mean(0).mean())}
+            "cov_first": cov[0].item(), "cov_last": cov[-1].item(),
+            "crps_first": cr[0].item(), "crps_last": cr[-1].item()}
 
 
 def main():
@@ -137,8 +140,9 @@ def main():
 
     rows = []
     header = (f"{'init':9s} {'spacing':9s} {'eta':4s} {'steps':>5s} | "
-              f"{'ens@1':>7s} {'ens@N':>7s} {'p@1':>7s} {'p@N':>7s} {'cov90':>6s} {'CRPS':>7s}")
-    print("\n(ens@1/ens@N = ensemble-mean NMSE at first/last AR step; p = per-sample)")
+              f"{'ens@1':>7s} {'ens@N':>7s} {'p@1':>7s} {'p@N':>7s} "
+              f"{'cov@1':>6s} {'cov@N':>6s} {'crps@1':>7s} {'crps@N':>7s}")
+    print("\n(@1/@N = value at the FIRST / LAST autoregressive step; ens=ensemble-mean NMSE, p=per-sample)")
     print(header); print("-" * len(header))
     for init in inits:
         cfg.diu.deterministic_init = (init == "zeros")
@@ -155,7 +159,8 @@ def main():
                     m = eval_cell(enc, gen, scheduler, cfg, batches, device, args.snr, Kc, use_mu)
                     print(f"{init:9s} {spacing:9s} {eta:<4.1f} {st:5d} | "
                           f"{m['ens_first']:7.2f} {m['ens_last']:7.2f} {m['per_first']:7.2f} "
-                          f"{m['per_last']:7.2f} {m['cov90']:6.3f} {m['crps']:7.3f}  (K={Kc})", flush=True)
+                          f"{m['per_last']:7.2f} {m['cov_first']:6.3f} {m['cov_last']:6.3f} "
+                          f"{m['crps_first']:7.3f} {m['crps_last']:7.3f}  (K={Kc})", flush=True)
                     rows.append({"init": init, "spacing": spacing, "eta": eta, "steps": st,
                                  "K": Kc, **m})
 
