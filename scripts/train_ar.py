@@ -150,7 +150,8 @@ def main():
     train_iter = iter(DataLoader(
         CSIStreamDataset(cfg.data, batch_size=cfg.train.batch_size, steps_per_epoch=None), batch_size=None))
     meta = {"objective": args.objective, "mu": args.mu, "diff_steps": args.diff_steps,
-            "source_psd": args.source_psd, "prediction_type": cfg.diu.prediction_type}
+            "source_psd": args.source_psd, "prediction_type": cfg.diu.prediction_type,
+            "gen_size": args.gen_size}
 
     enc.train(); gen.train()
     t0 = time.time(); running, running_aux, running_n = 0.0, 0.0, 0

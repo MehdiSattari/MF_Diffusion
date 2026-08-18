@@ -19,8 +19,8 @@ cd "$SLURM_SUBMIT_DIR"; mkdir -p logs
 source "${VENV_DIR:-$HOME/MF_CSI_Prediction/venv}/bin/activate"
 export TF_CPP_MIN_LOG_LEVEL=3
 OBJ="${OBJ:-meanflow}"; MU="${MU:-on}"; STEPS="${STEPS:-50000}"
-pt="${PRED_TYPE:+_${PRED_TYPE}}"
-OUT="${OUT:-runs/ar_${OBJ}_mu${MU}${pt}_${SLURM_JOB_ID}}"
+pt="${PRED_TYPE:+_${PRED_TYPE}}"; gs="${GEN_SIZE:+_gs${GEN_SIZE}}"
+OUT="${OUT:-runs/ar_${OBJ}_mu${MU}${pt}${gs}_${SLURM_JOB_ID}}"
 EXTRA=""; [ -n "${BATCH:-}" ] && EXTRA="--batch-size ${BATCH}"; [ -n "${RESUME:-}" ] && EXTRA="$EXTRA --resume ${RESUME}"
 [ -n "${SOURCE_PSD:-}" ] && EXTRA="$EXTRA --source-psd ${SOURCE_PSD}"
 [ -n "${GEN_SIZE:-}" ] && EXTRA="$EXTRA --gen-size ${GEN_SIZE}"
