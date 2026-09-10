@@ -23,9 +23,9 @@ module load Python/3.11.5-GCCcore-13.2.0
 module load LLVM/16.0.6-GCCcore-13.2.0
 export DRJIT_LIBLLVM_PATH="$(ls "$EBROOTLLVM"/lib/libLLVM*.so* 2>/dev/null | head -n1)"
 
-# Where the venv lives (project-group group storage; override freely).
+# Where the venv lives (set VENV_DIR to your project/group storage; override freely).
 VENV_DIR="${VENV_DIR:-$HOME/MF_CSI_Prediction/venv}"
-CACHE_PARENT="$(dirname "$(dirname "$VENV_DIR")")"   # .../project-group/user
+CACHE_PARENT="$(dirname "$(dirname "$VENV_DIR")")"   # parent of the project dir
 
 # Keep pip cache + temp off the small $HOME quota (and out of the repo).
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${CACHE_PARENT}/.pipcache}"

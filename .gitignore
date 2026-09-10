@@ -33,6 +33,9 @@ runs/**
 !runs/**/*.json
 !runs/**/*.png
 
+# Unpublished paper source (kept private; purged from history before going public)
+paper/
+
 # macOS metadata sidecars (created when the folder syncs from a Mac)
 ._*
 .DS_Store
